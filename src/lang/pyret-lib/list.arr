@@ -3,6 +3,7 @@
 provide
   {
     is-List: is-List,
+    ["List?"]: is-List,
     is-empty: is-empty,
     is-link: is-link,
     empty: empty,
