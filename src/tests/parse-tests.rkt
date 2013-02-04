@@ -322,3 +322,14 @@ end"
                                     'is-cons)))
          (s-num _ 4)))
 
+(check/block "var x :: list.List: []"
+  (s-var _
+         (s-bind _ 'x
+                 (a-dot _ (list 'list 'List)))
+         (s-list _ (list))))
+
+(check/block "var x :: list.List.foo: []"
+  (s-var _
+         (s-bind _ 'x
+                 (a-dot _ (list 'list 'List 'foo)))
+         (s-list _ (list))))

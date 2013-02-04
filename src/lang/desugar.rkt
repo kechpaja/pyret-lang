@@ -50,7 +50,10 @@
        (define args (map s-member-name members))
        ;; TODO(joe): annotations on args
        (define constructor-args
-        (map (lambda (id) (s-bind s id (a-blank))) args))
+        (map (lambda (member)
+          (match member
+            [(s-member s name ann)
+             (s-bind s name ann)])) members))
        (define obj
          (s-onion s
                   (s-obj s (map member->field

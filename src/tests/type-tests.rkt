@@ -85,7 +85,7 @@
   f(\\m: (m.value))"
  "runtime:")
 
-(check-pyret-exn/libs
+(check-pyret-exn
  "fun even(x):
     cond:
       | x.equals(0) => true
@@ -96,7 +96,7 @@
   var x :: Number(even): 5"
  "contract failure")
 
-(check-pyret/libs
+(check-pyret
  "fun even(x):
     cond:
       | x.equals(0) => true
@@ -106,4 +106,12 @@
   end
   var x :: Number(even): 10 x"
  ten)
+
+(check-pyret/libs
+ "var x :: list.List: [10] x.first"
+ ten)
+
+(check-pyret-exn/libs
+ "var x :: list.List: 10 x"
+ "typecheck failed")
 

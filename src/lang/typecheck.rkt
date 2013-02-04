@@ -14,6 +14,7 @@
 (define (string-of-ann ann)
   (match ann
     [(a-name _ id) (symbol->string id)]
+    [(a-dot _ ids) (string-join (map symbol->string ids) ".")]
     [(a-arrow _ t1 t2) (format "~a -> ~a" (map string-of-ann t1) (string-of-ann t2))]
     [(a-blank) "Any"]
     [(a-any) "Any"]
@@ -58,6 +59,16 @@
       (s-id s (string->symbol
                (string-append
                 (symbol->string id) "?"))))]
+    [(a-dot s ids)
+     ;; turn '(o x y) into (bracket (bracket o "x") "y")
+     (define (make-lookups ids obj)
+       (match ids
+          [(list) (error "[typecheck]: empty list in a-dot")]
+          [(list id)
+           (s-bracket s obj (s-str s (string-append (symbol->string id) "?")))]
+          [(list id rest ...)
+           (make-lookups ids (s-bracket s obj (symbol->string id)))]))
+     (mk-flat-checker (make-lookups (rest ids) (s-id s (first ids))))]
     [(a-blank)
      (mk-flat-checker (s-id loc 'Any?))]
     [(a-any)

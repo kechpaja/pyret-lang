@@ -334,6 +334,11 @@
     [(_ name)
      #`(a-name #,(loc stx) '#,(parse-name #'name))]))
 
+(define-syntax (dot-ann stx)
+  (syntax-case stx (dot-ann-part)
+    [(_ (dot-ann-part name ".") ... last)
+     #`(a-dot #,(loc stx) '#,(parse-names #'(name ... last)))]))
+
 (define-syntax (ann-field stx)
   (syntax-case stx ()
     [(_ key ":" value)

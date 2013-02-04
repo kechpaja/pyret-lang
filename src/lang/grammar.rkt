@@ -107,9 +107,11 @@ data-expr: "data" NAME data-params data-variant+ data-sharing
 do-stmt: block ";"
 do-expr: "do" stmt do-stmt* block "end"
            
-ann: name-ann | record-ann | arrow-ann | app-ann | pred-ann
+ann: name-ann | dot-ann | record-ann | arrow-ann | app-ann | pred-ann
 
 name-ann: NAME
+dot-ann-part: NAME "."
+dot-ann: dot-ann-part* NAME 
 record-ann: "{" [list-ann-field* ann-field] "}"
 ann-field: NAME ":" ann
 list-ann-field: ann-field ","
