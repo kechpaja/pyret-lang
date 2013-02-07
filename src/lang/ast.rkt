@@ -54,6 +54,7 @@
   (struct-out a-field)
   (struct-out a-app)
   (struct-out a-pred)
+  (struct-out a-proved)
 )
 
 #|
@@ -227,7 +228,7 @@ these metadata purposes.
                (args : (Listof Stmt)))
               #:transparent)
 
-(define-type Ann (U a-blank a-any a-name a-arrow a-method a-record a-app a-pred))
+(define-type Ann (U a-blank a-any a-name a-arrow a-method a-record a-app a-pred a-proved))
 (struct: a-blank () #:transparent)
 (struct: a-any () #:transparent)
 (struct: a-name ((syntax : srcloc) (id : Symbol)) #:transparent)
@@ -254,4 +255,7 @@ these metadata purposes.
     (ann : Ann)
     (exp : Expr))
    #:transparent)
+(struct: a-proved ((syntax : srcloc)
+		   (ann : Ann))
+	 #:transparent)
 

@@ -177,4 +177,75 @@
 
 (define (contract-check-pyret ast)
   (cc-env ast (make-immutable-hash)))
+
+(define (subtype? a b) #t)
+
+;; tc-env returns (cons type ast)
+;; the ast is modified; any annotation that can be proven statically will
+;; be replaced with an (a-proved old-annotation).
+(define (tc-env ast env)
+  (define tc (curryr tc-env env))
+  (match ast
+    ;; cases with annotations that should be checked / proved if possible
+    [(s-var s1 (s-bind s2 id ann) val)
+     (define val-ty (tc-env val env))
+     (define var-ty (hash-ref env id #f))
+     (cond
+      [(subtype? val-ty var-ty) (cons val-ty (s-var s1 (s-bind s2 id (a-proved ann)) val))]
+      [(equal? var-ty #f) (cons val-ty ast)]
+      [else (error (format "typecheck: error at ~a" s1))])]
+
+    [(s-assign s name expr)
+     (define exp-ty (tc-env expr env))
+     (match (hash-ref env name #f)
+       [#f (cons exp-ty ast)]
+       [ty (cond
+	    [(subtype? exp-ty ty) (cons exp-ty ast)]
+	    [else (error (format "typecheck: error at ~a" s))])])]
+
+    #;[(s-app s fun args)
+     (define args-ty (map (curryr tc-env env) args))
+     (define fun-ty (tc-env fun env))
+     (match fun-ty
+       [(a-arrow s args ret)
+	(cond
+	 [(and (foldr (lambda (a b) (and a b)) #t (map subtype? args-ty args))
+	       )
+	       ])])]
+    
+    [(s-lam s typarams args ann doc body) (cons (a-blank) ast)]
+
+    [(s-method s args ann body) (cons (a-blank) ast)]
+
+    ;; cases that should return the most specific type they can
+    [(s-block s stmts) (cons (a-blank) ast)]
+    
+    [(s-cond s c-bs) (cons (a-blank) ast)]
+
+    [(s-onion s super fields) (cons (a-blank) ast)]
+
+    [(s-obj s fields) (cons (a-blank) ast)]
+    
+    [(s-dot s val field) (cons (a-blank) ast)]
+    
+    [(s-bracket s val field) (cons (a-blank) ast)]
+    
+    [(s-dot-method s obj field) (cons (a-blank) ast)]
+    
+    [(s-bracket-method s obj field) (cons (a-blank) ast)]
+
+    [(s-list s elts) (cons (a-name s 'List) ast)]
+    [(s-num s _) (cons (a-name s 'Number) ast)]
+    [(s-bool s _) (cons (a-name s 'Boolean) ast)]
+    [(s-str s _) (cons (a-name s 'String) ast)]
+
+    [(s-id s id)
+     (match (hash-ref env id #f)
+       [#f (cons (a-blank) ast)]
+       [t (cons t ast)])]
+    
+    [else (error (format "Missed a case in type-checking: ~a" ast))]))
   
+
+(define (type-check-pyret ast)
+  (tc-env ast (make-immutable-hash)))
