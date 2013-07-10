@@ -46,7 +46,8 @@
 
 (define (compile-expr ast-node)
   (define (mark l expr)
-    (with-syntax [((loc-param ...) (loc-list l))]
+    expr
+    #;(with-syntax [((loc-param ...) (loc-list l))]
       #`(r:with-continuation-mark (r:quote pyret-mark) (r:srcloc loc-param ...) #,expr)))
   (define (compile-body l body)
     (mark l (compile-expr body)))
