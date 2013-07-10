@@ -43,6 +43,7 @@ Need-to-have (soon):
   [] Rename s-dot-method, s-bracket-method
   [x] make docstrings first-class productions
 [x] Better string-checking in computed field name positions in object literals
+[] What is the none struct in runtime.rkt?
 
 CS019 Assignments
 [x] Flags

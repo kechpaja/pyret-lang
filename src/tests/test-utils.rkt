@@ -11,6 +11,7 @@
   compile-str
   parse-pyret
   eval-pyret
+  eval-pyret/check
   check-match
   check-not-exn)
 (require
