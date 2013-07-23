@@ -304,8 +304,7 @@
     [else (error (format "Missed a case in type-checking: ~a" ast))]))
 
 (define (contract-check-pyret ast)
-  ast
-  #;(match ast
+  (match ast
     ;; TODO(joe): typechecking provides expressions?
     [(s-prog s imps ast)
      (s-prog s imps (cc-env ast (make-immutable-hash)))]

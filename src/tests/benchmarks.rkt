@@ -8,7 +8,7 @@
 	 "test-utils.rkt"
 	 "../lang/runtime.rkt")
 
-(define PROFILE? #t)
+(define PROFILE? #f)
 (compile-context-preservation-enabled #t)
 
 (define (benchmark-path sub) (build-path "benchmarks/" sub))

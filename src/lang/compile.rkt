@@ -135,8 +135,7 @@
 (define (compile-expr/internal ast-node env)
   (define compile-expr compile-expr/internal)
   (define (mark l expr)
-    expr
-    #;(with-syntax [((loc-param ...) (loc-list l))]
+    (with-syntax [((loc-param ...) (loc-list l))]
       #`(r:with-continuation-mark (r:quote pyret-mark) (r:srcloc loc-param ...) #,expr)))
   (define (compile-body l body new-env)
     (mark l (compile-expr body new-env)))
