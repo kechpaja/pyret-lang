@@ -47,34 +47,34 @@
     (define (wrap-for-racket-callback k f)
       (cond
         [(equal? k "to-draw")
-         (lambda (world) (p:p-opaque-val ((p:p-base-app f) world)))]
+         (lambda (world) (p:p-opaque-val ((p:p-fun-f f) world)))]
         [(equal? k "stop-when")
-         (lambda (world) (ffi-unwrap ((p:p-base-app f) world)))] 
+         (lambda (world) (ffi-unwrap ((p:p-fun-f f) world)))] 
         [(equal? k "on-key")
-         (lambda (world key) ((p:p-base-app f) world (ffi-wrap key)))]
+         (lambda (world key) ((p:p-fun-f f) world (ffi-wrap key)))]
         [(equal? k "on-mouse")
          (lambda (world x y type)
           (define event-obj (p:mk-object (make-string-map (list 
             (cons "x" (ffi-wrap x))
             (cons "y" (ffi-wrap y))
             (cons "type" (ffi-wrap type))))))
-          ((p:p-base-app f) world event-obj))]
+          ((p:p-fun-f f) world event-obj))]
         [(equal? k "on-tick")
-         (lambda (world) ((p:p-base-app f) world))]
+         (lambda (world) ((p:p-fun-f f) world))]
         [else (raise (p:pyret-error p:dummy-loc "big-bang-no-impl"
                       (format "No implementation for big-bang handler ~a" k)))]))
-    (match (second args)
-      [(p:p-object _ d _ _)
-       (define hash-for-bb
-         (make-hash
-          (string-map-map
-            d
-            (lambda (k v) (cons (string->symbol k)
-                                (wrap-for-racket-callback k (string-map-ref d k)))))))
-       (define my-world (my-bb (first args) hash-for-bb))
-         (run-it my-world)]
-      [v (raise (p:pyret-error p:dummy-loc "big-bang-non-object"
-                     (format "Non-object given to big bang: ~a" (p:to-string v))))]))
+    (cond (second args)
+     [(p:pyret-val? (second args))
+      (define hash-for-bb
+        (make-hash
+         (string-map-map
+           (second args)
+           (lambda (k v) (cons (string->symbol k)
+                               (wrap-for-racket-callback k (string-map-ref (second args) k)))))))
+        (define my-world (my-bb (first args) hash-for-bb))
+          (run-it my-world)]
+      [else (raise (p:pyret-error p:dummy-loc "big-bang-non-object"
+                     (format "Non-object given to big bang: ~a" (p:to-string (second args)))))]))
 
 (define big-bang-pfun (p:mk-fun-nodoc-slow big-bang))
 

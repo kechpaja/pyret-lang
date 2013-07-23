@@ -56,28 +56,29 @@
         (pyret->racket src in #:toplevel #t))))
 
 (define (simplify-pyret val)
-  (match val
-    [(? (λ (v) (eq? v nothing))) nothing]
-    [(p:p-num _ _ _ _ n) n]
-    [(p:p-str _ _ _ _ s) s]
-    [(p:p-bool _ _ _ _ b) b]
-    [(p:p-object _ d _ _)
+  (cond
+    [(eq? val nothing) nothing]
+    [(not (p:pyret-val? val)) (void)]
+    [(p:p-num? val) (p:p-num-n val)]
+    [(p:p-str? val) (p:p-str-s val)]
+    [(p:p-bool? val) (p:p-bool-b val)]
+    [(p:p-object? val)
+     (define d (p:get-string-dict val))
      (make-hash (hash-map d (lambda (s v) (cons s (simplify-pyret v)))))]
-    [(? p:p-base?) val]
-    [_ (void)]))
+    [else val]))
 
 (define (pyret-to-printable val)
   (when (not (equal? val nothing))
-    (match val
-      [(p:p-opaque v) v]
-      [(? p:p-base?) (p:to-string val)]
-      [_ (void)])))
+    (cond
+      [(p:p-opaque? val) val]
+      [(p:pyret-val? val) (p:to-string val)]
+      [else (void)])))
 
 
 (define (print-pyret val)
   (when (not (equal? val nothing))
-    (match val
-      [(p:p-opaque v) (racket-print v) (newline)]
-      [(? p:p-base?) (printf "~a\n" (p:to-string val))]
-      [_ (void)])))
+    (cond
+      [(p:p-opaque? val) (racket-print val) (newline)]
+      [(p:pyret-val? val) (printf "~a\n" (p:to-string val))]
+      [else (void)])))
 

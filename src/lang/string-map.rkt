@@ -5,11 +5,7 @@
 (provide (all-defined-out))
 
 (define make-string-map make-js-map)
-(define (string-map-ref obj-map str
-          (default (lambda () (raise (format "Key not found: ~a" str)))))
-  (cond
-    [(js-map-has-key? obj-map str) (js-map-get obj-map str)]
-    [else (default)]))
+(define string-map-ref hash-ref)
 (define string-map-set js-map-set)
 (define string-map-set* js-map-set*)
 (define string-map-keys js-map-keys)
@@ -20,3 +16,4 @@
        (string-map-keys obj-map)))
 
 (define string-map-count hash-count)
+(define string-map? hash?)

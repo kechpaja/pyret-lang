@@ -85,7 +85,7 @@
     ))
 
 (define (print-check-results results)
-  ((p:p-base-method (p:get-raw-field p:dummy-loc results "format")) results))
+  ((p:p-method-m (p:get-raw-field p:dummy-loc results "format")) results))
 (error-display-handler process-pyret-error)
 
 (define check-mode #f)

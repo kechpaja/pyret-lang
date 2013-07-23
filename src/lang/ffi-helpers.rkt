@@ -17,28 +17,28 @@
     [(string? val) (p:mk-str val)]
     [(boolean? val) (p:mk-bool val)]
     [(list? val) (create-pyret-list val)]
-    [(p:p-base? val) val]
-    [(p:p-opaque? val) val]
+    [(string-map-has-key? val 'p-opaque) val]
+    [(string-map-has-key? val 'brands) val]
     [else (p:p-opaque val)]))
 
 (define (ffi-unwrap val)
   (cond
     [(p:p-opaque? val) (p:p-opaque-val val)]
     [else
-     (p:py-match val
-       [(p:p-fun _ _ f _)
-        (lambda args (ffi-unwrap (apply f (map ffi-wrap args))))]
-       [(p:p-num _ _ _ _ n) n]
-       [(p:p-str _ _ _ _ s) s]
-       [(p:p-bool _ _ _ _ b) b]
-       [(p:p-object _ _ _ _)
-        (if (pyret-list? val)
-            (map ffi-unwrap (p:structural-list->list val))
-            val)]
-       [(default _) val])]))
+     (cond
+      [(p:p-fun? val)
+       (lambda args (ffi-unwrap (apply (p:p-fun-f (map ffi-wrap args)))))]
+      [(p:p-num? val) (p:p-num-n val)]
+      [(p:p-str? val) (p:p-str-s val)]
+      [(p:p-bool? val) (p:p-bool-b val)]
+      [(p:pyret-val? val)
+       (if (pyret-list? val)
+           (map ffi-unwrap (p:structural-list->list val))
+           val)]
+      [else val])]))
 
 (define (create-pyret-list l)
-  (define d (p:get-dict pyret-list))
+  (define d (p:get-string-dict pyret-list))
   (define link (string-map-ref d "link"))
   (define empty (string-map-ref d "empty"))
   (foldr (λ (elem lst) (p:apply-fun link p:dummy-loc (ffi-wrap elem) lst)) empty l))

@@ -9,7 +9,7 @@
 (provide (rename-out [template %PYRET-PROVIDE]))
 
 (define (render-template filename obj)
-  (define dict (p:get-dict obj))
+  (define dict (p:get-string-dict obj))
   (define namespace-for-template (make-empty-namespace))
   (namespace-attach-module (current-namespace) 'web-server/templates namespace-for-template)
   (string-map-map dict

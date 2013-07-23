@@ -20,22 +20,22 @@
 (define constants (test-suite
   "constants and literals"
 
-  (check-pyret-match "5" (p:p-num (hash-table) x _ _ 5))
+  (check-pyret "5" (p:mk-num 5))
   (check-pyret "5" five)
   (check-pyret-fail "2" five)
 
-  (check-pyret "{}" (p:mk-object (make-immutable-hash)))
+  (check-pyret "{}" (p:mk-object (list)))
 
   (check-pyret "'5'" (p:mk-str "5"))
 
-  (check-pyret-match "true" (p:p-bool _ _ _ _ #t))
-  (check-pyret-match "false" (p:p-bool _ _ _ _ #f))
+  (check-pyret "true" p:p-true)
+  (check-pyret "false" p:p-false)
 
-  (check-pyret "{x:5}" (p:mk-object (make-immutable-hash (list (cons "x" five))))) 
-  (check-pyret "{['x']:5}" (p:mk-object (make-immutable-hash (list (cons "x" five)))))
-  (check-pyret "f = 'x' {[f]:5}" (p:mk-object (make-immutable-hash (list (cons "x" five)))))
+  (check-pyret "{x:5}" (p:mk-object (list (cons "x" five))))
+  (check-pyret "{['x']:5}" (p:mk-object (list (cons "x" five))))
+  (check-pyret "f = 'x' {[f]:5}" (p:mk-object (list (cons "x" five))))
 
-  (check-pyret "{['x'.append('y')]:5}" (p:mk-object (make-immutable-hash (list (cons "xy" five)))))
+  (check-pyret "{['x'.append('y')]:5}" (p:mk-object (list (cons "xy" five))))
 
   (check-pyret "'fod'.substring(1,2)" (p:mk-str "o"))
 
@@ -91,37 +91,37 @@
     "foo")
 
   ;; tostring on functions
-  (check-pyret-match "fun f(x): x end f.tostring()"
-             (p:p-str _ _ _ _ "fun f(x): '' end"))
+  (check-pyret "fun f(x): x end f.tostring()" (p:mk-str "fun f(x): '' end"))
   
-  (check-pyret-match "fun f(x): doc: 'great' x end f.tostring()"
-               (p:p-str _ _ _ _ "fun f(x): 'great' end"))
+  (check-pyret "fun f(x): doc: 'great' x end f.tostring()"
+               (p:mk-str "fun f(x): 'great' end"))
 
-  (check-pyret-match "(fun(x): x end).tostring()"
-               (p:p-str _ _ _ _ "fun (x): '' end"))
+  (check-pyret "(fun(x): x end).tostring()"
+               (p:mk-str "fun (x): '' end"))
 
-  (check-pyret-match "(fun(x): doc: 'great' x end).tostring()"
-               (p:p-str _ _ _ _ "fun (x): 'great' end"))
+  (check-pyret "(fun(x): doc: 'great' x end).tostring()"
+               (p:mk-str "fun (x): 'great' end"))
 
-  (check-pyret-match "(fun(x :: Number): doc: 'great' x end).tostring()"
-               (p:p-str _ _ _ _ "fun (x): 'great' end"))
+  (check-pyret "(fun(x :: Number): doc: 'great' x end).tostring()"
+               (p:mk-str "fun (x): 'great' end"))
 
 ))
 
 
 (define brands (test-suite "brands"
 
-  (check-pyret-match "brander()" (p:p-object (hash-table) (hash-table ("brand" _) ("test" _)) _ _))
-  (check-pyret-match "fun f(z): x = brander() y = x.brand(z) y end f(2)"
-                     (p:p-num (hash-table _) _ _ _ 2))
-  (check-pyret-match "fun f(z): x = brander() y = x.brand(z) x.test(y) end f(2)"
-                     (p:p-bool _ _ _ _ #t))
-  (check-pyret-match "fun f(y): x = brander() x.test(y) end f(2)"
-                     (p:p-bool _ _ _ _ #f))
-  (check-pyret-match "fun f(z): x = brander() y = brander() u = x.brand(z) y.test(u) end f(3)"
-                     (p:p-bool _ _ _ _ #f))
-  (check-pyret-match "fun f(z): x = brander() y = brander() u = x.brand(z) w = y.brand(u) x.test(w) end f(3)"
-                     (p:p-bool _ _ _ _ #t))
+  (check-pyret "builtins.has-field(brander(), 'brand'" p:p-true)
+  (check-pyret "builtins.has-field(brander(), 'test'" p:p-false)
+  (check-pyret "fun f(z): x = brander() y = x.brand(z) y x.test(y) end f(2)"
+               p:p-true)
+  (check-pyret "fun f(z): x = brander() y = x.brand(z) x.test(y) end f(2)"
+               p:p-true)
+  (check-pyret "fun f(y): x = brander() x.test(y) end f(2)"
+               p:p-false)
+  (check-pyret "fun f(z): x = brander() y = brander() u = x.brand(z) y.test(u) end f(3)"
+               p:p-false)
+  (check-pyret "fun f(z): x = brander() y = brander() u = x.brand(z) w = y.brand(u) x.test(w) end f(3)"
+               p:p-false)
 
   (check-pyret
     "b = brander()
@@ -250,9 +250,9 @@
     five)
 
 
-  (check-pyret-match
-    "data Foo: | bar() end bar._doc"
-    (p:p-str _ _ _ _ _))
+  (check-pyret
+    "data Foo: | bar() end String(bar._doc)"
+    p:p-true)
 
   (check-pyret
    "data List:
@@ -297,12 +297,12 @@
     (p:mk-num 0))
 
 
-  (check-pyret-match
+  (check-pyret
    "data Foo:
      | singleton
     end
-    singleton"
-    (? p:p-object? _))
+    Foo(singleton)"
+    p:p-true)
 
   (check-pyret
    "data Foo:
@@ -357,10 +357,10 @@
 
 (define modules (test-suite "modules"
 
-  (check-pyret-match
+  (check-pyret
    "import '../lang/pyret-lib/file.arr' as file
-    file.file"
-   (? p:p-fun? _))
+    Function(file.file)"
+   p:p-true)
   ;; two nested directories deep, the string "inner" is provided
   (check-pyret
    "import 'modules/nested-dir.arr' as result
@@ -408,14 +408,14 @@
 
 (define built-in-libraries (test-suite "built-in-libraries"
 
-  (check-pyret-match "list.is-empty([]) and list.List([])"
-                          (? p:pyret-true? _))
+  (check-pyret "list.is-empty([]) and list.List([])"
+               p:p-true)
 
   (check-pyret-match/check "pyret/list-tests.arr" _ 3 3 0 0 0)
 
-  (check-pyret-match
-    "prim-keys({x : 5})"
-    (? p:p-object? _))
+  (check-pyret
+    "prim-keys({x : 5}).first"
+    (p:mk-str "x"))
 
   (check-pyret
     "[5].first"
@@ -464,8 +464,9 @@
 
   (check-pyret "import Racket as R
                 R('racket')('+',2, 3)" five)
-  (check-pyret-match "import Racket as R
-                      R('racket')('string-append','four', 'ty', 'two')" (p:p-str _ _ _ _ "fourtytwo"))
+  (check-pyret "import Racket as R
+                R('racket')('string-append','four', 'ty', 'two')"
+                (p:mk-str "fourtytwo"))
   (check-pyret-exn "import Racket as R
                     R('racket')('map',4,5)" "map")
   (check-pyret "import Racket as R
@@ -502,9 +503,9 @@
     "
     five)
 
-  (check-pyret-match
-    "list.empty"
-    (? p:p-object? _))
+  (check-pyret
+    "Object(list.empty)"
+    p:p-true)
 
   (check-pyret
    "builtins.keys({x:5}).first"
@@ -623,8 +624,8 @@
   (check-pyret "{f(s): s.x end, x:10}.{x:5}.f()" five)
 
   ;; can extract raw methods
-  (check-pyret-match "3:_add" (p:p-method _ _ _ (? procedure?)))
-  (check-pyret-match "{f(x): 5 end}:f" (p:p-method _ _ _ (? procedure?)))
+  (check-pyret "Method(3:_add)" p:p-true)
+  (check-pyret "Method({f(x): 5 end}:f)" p:p-true)
 
   ;; can put raw methods on other objects and use them
   (check-pyret "var o = {x:5} var o2 = {f(self): self.x end} o := o.{g : o2:f} o.g()" five)
@@ -656,22 +657,22 @@ o2.m().called" true)
   (check-pyret "fun(self): doc: 'hello' 1 end._method()._doc" (p:mk-str "hello"))
 
   ;; tostring on methods
-  (check-pyret-match "(method (x): x end).tostring()"
-             (p:p-str _ _ _ _ "method (x): '' end"))
+  (check-pyret "(method (x): x end).tostring()"
+               (p:mk-str "method (x): '' end"))
 
-  (check-pyret-match "(method (x): doc: 'cool' x end).tostring()"
-             (p:p-str _ _ _ _ "method (x): 'cool' end"))
+  (check-pyret "(method (x): doc: 'cool' x end).tostring()"
+               (p:mk-str "method (x): 'cool' end"))
   
-  (check-pyret-match "o = {foo(x): x end} o:foo.tostring()"
-               (p:p-str _ _ _ _ "method foo(x): '' end"))
+  (check-pyret "o = {foo(x): x end} o:foo.tostring()"
+               (p:mk-str "method foo(x): '' end"))
 
-  (check-pyret-match "o = {foo(x): doc: 'cool' x end} o:foo.tostring()"
-               (p:p-str _ _ _ _ "method foo(x): 'cool' end"))
+  (check-pyret "o = {foo(x): doc: 'cool' x end} o:foo.tostring()"
+               (p:mk-str "method foo(x): 'cool' end"))
 
 
   ;; when curried, tostring() should still be the same
-  (check-pyret-match "o = {foo(x): doc: 'cool' x end} o.foo.tostring()"
-               (p:p-str _ _ _ _ "method foo(x): 'cool' end"))
+  (check-pyret "o = {foo(x): doc: 'cool' x end} o.foo.tostring()"
+               (p:mk-str "method foo(x): 'cool' end"))
 
   
 ))

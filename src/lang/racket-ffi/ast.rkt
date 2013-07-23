@@ -275,10 +275,9 @@
       [check-mode? (lambda (e) (desugar-pyret (desugar-check e)))]
       [else desugar-pyret]))
   (p:mk-object
-    (make-string-map
-      (list
-        (cons "pre-desugar" (to-pyret ast))
-        (cons "post-desugar" (to-pyret (desugar ast)))))))
+    (list
+      (cons "pre-desugar" (to-pyret ast))
+      (cons "post-desugar" (to-pyret (desugar ast))))))
 
 (define export
   (p:extend

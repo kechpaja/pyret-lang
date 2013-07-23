@@ -15,7 +15,7 @@
 (define pyret-random (ffi-wrap random))
 
 (define (%animate init obj)
-  (define the-dict (p:get-dict obj))
+  (define the-dict (p:get-string-dict obj))
   (define handlers
     (string-map-map the-dict (lambda (key val)
       (define racket-val (ffi-unwrap val))

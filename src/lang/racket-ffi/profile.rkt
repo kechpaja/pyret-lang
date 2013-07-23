@@ -13,7 +13,7 @@
 
 (define (profile-wrapper pyret-fun)
   (define (wrapped)
-    ((p:p-base-app pyret-fun)))
+    ((p:p-fun-f pyret-fun)))
   (define start (current-milliseconds))
   (define result (profile-thunk wrapped #:threads #t #:delay 0.01 #:repeat 3))
   (define end (current-milliseconds))
@@ -23,5 +23,5 @@
 (define profile-pfun (p:mk-fun-nodoc-slow profile-wrapper))
 
 (define export (p:mk-object
-  (make-string-map (list (cons "profile" profile-pfun)))))
+  (list (cons "profile" profile-pfun))))
 
