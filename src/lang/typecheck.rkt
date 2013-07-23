@@ -93,10 +93,10 @@
      (define (get-fun e)
        (s-app s (s-bracket s e (s-str s "_fun")) (list)))
      (code-wrapper s args result mk-method get-fun)]
-    [(a-app s name parameters)
+    [(a-app s ann parameters)
      ;; NOTE(dbp): right now just checking the outer part, as if
      ;; everything past the name weren't included.
-     (mk-flat-checker (s-id loc name))]
+     (ann-check loc ann)]
     [(a-pred s ann pred)
      (define ann-wrapper (ann-check s ann))
      (define argname (gensym "pred-arg"))
@@ -225,11 +225,20 @@
      (s-let s bnd (wrap-ann-check s (s-bind-ann bnd) (cc val)))]
 
     [(s-lam s typarams args ann doc body check)
+     (define (new-arg b)
+      (match b
+        [(s-bind s id ann) (s-bind s (gensym id) (a-blank))]))
+     (define new-args (map new-arg args))
+     (define new-argnames (map s-bind-id new-args))
      (define body-env (foldl (update-for-bind #f) env args))
-     (wrap-ann-check s
-                     (get-arrow s args ann)
-                     (s-lam s typarams args ann doc (cc-env body body-env)
-                            (cc-env check body-env)))]
+     (define wrapped-body
+      (wrap-ann-check s ann (cc-env body body-env)))
+     (define (check-arg bind new-id) (cc-env (s-let s bind (s-id s new-id)) body-env))
+     (define checked-args (map check-arg args new-argnames))
+     (define full-body
+      (s-block s
+        (append checked-args (list wrapped-body))))
+     (s-lam s typarams new-args ann doc full-body (cc check))]
 
     ;; TODO(joe): give methods an annotation position for result
     [(s-method s args ann doc body check)
@@ -237,6 +246,13 @@
      (wrap-ann-check s
       (a-method s (map s-bind-ann args) (a-blank))
       (s-method s args ann doc (cc-env body body-env) (cc-env check body-env)))]
+
+    [(s-if-else s if-bs else-block)
+     (define (cc-branch branch)
+       (match branch
+         [(s-if-branch s test expr)
+          (s-if-branch s (cc test) (cc expr))]))
+     (s-if-else s (map cc-branch if-bs) (cc else-block))]
 
     [(s-case s c-bs)
      (define (cc-branch branch)

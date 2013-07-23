@@ -24,6 +24,14 @@
 
 (define (to-pyret ast)
   (define tp to-pyret)
+  (define (tp-if-branch b)
+   (match b
+     [(s-if-branch s tst blk)
+      (build s_if_branch (tp-loc s) (tp tst) (tp blk))]))
+  (define (tp-cases-branch b)
+   (match b
+     [(s-cases-branch s name args blk)
+      (build s_cases_branch (tp-loc s) (symbol->string name) (map tp-bind args) (tp blk))]))
   (define (tp-variant variant)
     (match variant
       [(s-variant l name binds members)
@@ -142,6 +150,24 @@
         (tp-loc s)
         (map tp-case-branch c-bs))]
 
+    [(s-if s if-bs)
+     (build s_if (tp-loc s) (map tp-if-branch if-bs))]
+
+    [(s-if-else s if-bs else)
+     (build s_if_else (tp-loc s) (map tp-if-branch if-bs) (tp else))]
+
+    [(s-cases s type val c-bs)
+     (build s_cases (tp-loc s) 
+                    (tp type)
+                    (tp val)
+                    (map tp-cases-branch c-bs))]
+
+    [(s-cases-else s type val c-bs else)
+     (build s_cases_else (tp-loc s)
+                         (tp type)
+                         (tp val)
+                         (map tp-cases-branch c-bs) (tp else))]
+
     [(s-try s try exn catch)
      (build s_try
         (tp-loc s)
@@ -228,8 +254,8 @@
      (build a_arrow (tp-loc s) (map tp-ann args) (tp-ann result))]
     [(a-method s args result)
      (build a_method (tp-loc s) (map tp-ann args) (tp-ann result))]
-    [(a-app s name parameters)
-     (build a_app (tp-loc s) (symbol->string name) (map tp-ann parameters))]
+    [(a-app s ann parameters)
+     (build a_app (tp-loc s) (tp-ann ann) (map tp-ann parameters))]
     [(a-pred s ann pred)
      (build a_pred (tp-loc s) (tp-ann ann) (to-pyret pred))]
     [(a-record s fields)

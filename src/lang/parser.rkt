@@ -222,6 +222,25 @@
     [(case-branch "|" test "=>" body)
      (s-case-branch (loc stx) (parse-binop-expr #'test) (parse-block #'body))]))
 
+(define (parse-cases-branch stx)
+  (syntax-parse stx
+    #:datum-literals (cases-branch)
+    [(cases-branch "|" name "=>" body)
+     (s-cases-branch (loc stx) (parse-name #'name) empty (parse-block #'body))]
+    [(cases-branch "|" name args "=>" body)
+     (s-cases-branch (loc stx) (parse-name #'name) (parse-args #'args) (parse-block #'body))]))
+
+
+(define (parse-else-if stx)
+  (syntax-parse stx
+    #:datum-literals (else-if)
+    [(else-if "else if" test ":" body)
+     (s-if-branch (loc stx) (parse-binop-expr #'test) (parse-block #'body))]))
+
+(define (parse-else stx)
+  (syntax-parse stx
+    #:datum-literals (else)
+    [(else "else:" body) (parse-block #'body)]))
 
 (define (parse-ty-params stx)
   (syntax-parse stx
@@ -286,6 +305,24 @@
      (s-colon-bracket (loc stx) (parse-expr #'obj) (parse-binop-expr #'field))]
     [(case-expr "case:" branch ... "end")
      (s-case (loc stx) (map/stx parse-case-branch #'(branch ...)))]
+    [(cases-expr "cases" "(" type ")" val ":" branch ... "|" "else" "=>" else-block "end")
+     (s-cases-else (loc stx) (parse-expr #'type) (parse-expr #'val)
+      (map/stx parse-cases-branch #'(branch ...))
+      (parse-block #'else-block))]
+    [(cases-expr "cases" "(" type ")" val ":" branch ... "end")
+     (s-cases (loc stx) (parse-expr #'type) (parse-expr #'val)
+      (map/stx parse-cases-branch #'(branch ...)))]
+    [(if-expr "if" test ":" body branch ... "else:" else-block "end")
+     (s-if-else (loc stx)
+       (cons
+         (s-if-branch (loc #'test) (parse-binop-expr #'test) (parse-block #'body))
+         (map/stx parse-else-if #'(branch ...)))
+       (parse-block #'else-block))]
+    [(if-expr "if" test ":" body branch ... "end")
+     (s-if (loc stx)
+       (cons
+         (s-if-branch (loc #'test) (parse-binop-expr #'test) (parse-block #'body))
+         (map/stx parse-else-if #'(branch ...))))]
     [(for-expr "for" iter "(" (for-bind-elt binds ",") ... last-bind ")" return-ann ":" body "end")
      (s-for (loc stx)
             (parse-expr #'iter)
@@ -375,9 +412,9 @@
      (a-arrow (loc stx)
               (map/stx parse-ann #'(anns ... last-ann))
               (parse-ann #'result))]
-    [(app-ann (name-ann n) "<" (app-ann-elt anns ",") ... last-ann ">")
+    [(app-ann the-ann "<" (app-ann-elt anns ",") ... last-ann ">")
      (a-app (loc stx)
-            (parse-name #'n)
+            (parse-ann #'the-ann)
             (map/stx parse-ann #'(anns ... last-ann)))]
     [(pred-ann annbase "(" expr ")")
      (a-pred (loc stx) (parse-ann #'annbase) (parse-binop-expr #'expr))]

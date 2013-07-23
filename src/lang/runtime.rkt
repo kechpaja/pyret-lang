@@ -2,7 +2,7 @@
 
 ;(require racket/set ;; set add union member intersect map)
 (require (for-syntax racket/base))
-(require "obj-map.rkt")
+(require "string-map.rkt")
 
 (define (hash-fold f h init)
   (when (not (hash? h)) (error (format "Bad fold: ~a ~a ~a" f h init)))
@@ -58,34 +58,36 @@
 (provide
   (prefix-out p:
     (combine-out
-      make-obj-map
-      py-match
-      (struct-out none)
-      (struct-out p-opaque)
-      (struct-out p-base)
-      (struct-out p-nothing)
-      (struct-out p-object)
-      (struct-out p-num)
-      (struct-out p-bool)
-      (struct-out p-str)
-      (struct-out p-fun)
-      (struct-out p-method)
+      make-string-map
+      p-opaque?
+      p-opaque
+      p-opaque-val
+      p-true
+      p-false
+      p-bool? p-bool-b
+      p-str? p-str-s
+      p-num? p-num-n
+      p-object?
+      p-fun? p-fun-f
+      p-method? p-method-m
+      p-nothing?
+      pyret-val?
+      get-string-dict
       (struct-out exn:fail:pyret)
       mk-object
       mk-num
       mk-bool
       mk-str
+      arity-catcher
       pλ
       mk-fun
       mk-fun-nodoc
-      mk-internal-fun
+      mk-fun-nodoc-slow
       pμ
       mk-method
       mk-structural-list
       structural-list?
       structural-list->list
-      wrap
-      unwrap
       mk-exn
       pyret-error
       empty-dict
@@ -93,7 +95,6 @@
       get-raw-field
       apply-fun
       arity-error
-      check-fun
       check-str
       has-field?
       extend
@@ -137,10 +138,9 @@
 ;(define-type Dict (HashTable String Value))
 ;(define-type Proc (Value * -> Value))
 
-(struct none () #:transparent)
 #|
 ;; p-base: (SetOf Symbol) StringMap (Value ... -> Value) -> p-base
-(struct p-base (brands dict app) #:transparent)
+(struct p-base (brands dict app method) #:transparent)
 (struct p-nothing p-base () #:transparent)
 (struct p-object p-base () #:transparent)
 ;; p-num : p-base Number -> p-num
@@ -152,7 +152,7 @@
 ;; p-fun : p-base (Loc -> Proc) -> p-fun
 (struct p-fun p-base () #:transparent)
 ;; p-method: p-base Proc -> p-method
-(struct p-method p-base (m) #:transparent)
+(struct p-method p-base () #:transparent)
 (struct p-opaque (val))
 |#
 
@@ -162,6 +162,7 @@
   {
     'brands: (SetOf symbol)
     'app: Value ... -> Value
+    'method: Value Value ... -> Value
     [field-str]: Value
   }
 
@@ -191,10 +192,12 @@
 
   p-method is:
 
-    p-base.{ 'p-method: Value Value ... -> Value }
+    p-base.{ 'p-method: #t }
+
+  p-opaque is
+
+    p-base.{ 'p-opaque: Any }
 |#
-
-
 
 (define (loc-list loc)
   (define (serialize-source e)
@@ -216,6 +219,12 @@
     [(> (length cms) 0) (loc-list (first cms))]
     [else dummy-loc]))
 
+(define-syntax-rule (arity-catcher (arg ...) e ...)
+  (case-lambda
+    [(arg ...) e ...]
+    [arity-mismatch-args-list
+     (arity-error (get-top-loc) (quote (arg ...)) arity-mismatch-args-list)]))
+
 ;; NOTE(joe): the nested syntax/loc below appears necessary to get good
 ;; profiling and debugging line numbers for the created functions
 (define-syntax (pλ stx)
@@ -223,10 +232,8 @@
     [(_ (arg ...) doc e ...)
      (quasisyntax/loc stx
       (mk-fun
-        (case-lambda
-          #,(syntax/loc stx [(arg ...) e ...])
-          [arity-mismatch-args-list
-           (arity-error (get-top-loc) (quote (arg ...)) arity-mismatch-args-list)])
+        #,(syntax/loc stx (arity-catcher (arg ...) e ...))
+        #,(syntax/loc stx (arity-catcher (_ arg ...) e ...))
         doc))]))
 
 (define-syntax (pλ/internal stx)
@@ -234,10 +241,8 @@
     [(_ (loc) (arg ...) e ...)
      (quasisyntax/loc stx
       (mk-fun-nodoc
-       (case-lambda
-         #,(syntax/loc stx [(arg ...) e ...])
-         [arity-mismatch-args-list
-          (arity-error (get-top-loc) '(arg ...) arity-mismatch-args-list)])))]))
+        #,(syntax/loc stx (arity-catcher (arg ...) e ...))
+        #,(syntax/loc stx (arity-catcher (_ arg ...) e ...))))]))
 
 (define-syntax (pμ stx)
   (syntax-case stx ()
@@ -254,12 +259,12 @@
   (syntax-case stx ()
     [(_ (loc) (arg ...) doc e ...)
      (quasisyntax/loc stx
-      (mk-method
-        (case-lambda
-          #,(syntax/loc stx [(arg ...) e ...])
-          [arity-mismatch-args-list
-           (arity-method-error (get-top-loc) '(arg ...) arity-mismatch-args-list)])
-        doc))]))
+      (mk-method-nodoc
+        #,(quasisyntax/loc stx
+          (case-lambda
+            #,(syntax/loc stx [(arg ...) e ...])
+            [arity-mismatch-args-list
+             (arity-method-error (get-top-loc) '(arg ...) arity-mismatch-args-list)]))))]))
 
 
 
@@ -285,15 +290,14 @@
   (define line (if maybe-line maybe-line -1))
   (define column (if maybe-col maybe-col -1))
   (mk-object
-   (make-obj-map 
     (list (cons "value" (exn:fail:pyret-val e))
 	  (cons "system" (mk-bool (exn:fail:pyret-system? e)))
 	  (cons "path" (mk-str path))
 	  (cons "line" (mk-num line))
-	  (cons "column" (mk-num column))))))
+	  (cons "column" (mk-num column)))))
 
 ;; empty-dict: HashOf String Value
-(define empty-dict (make-obj-map '()))
+(define empty-dict (make-string-map '()))
 
 (define (bad-app type)
   (lambda args
@@ -303,116 +307,165 @@
         "apply-non-function"
         (format "check-fun: expected function, got ~a" (to-string type))))))
 
-(define nothing (make-obj-map
+(define (bad-meth type)
+  (lambda args
+    (raise
+      (pyret-error
+        (get-top-loc)
+        "apply-non-method"
+        (format "check-method: expected method, got ~a" (to-string type))))))
+
+(define nothing (make-string-map
   (list
     (cons 'p-nothing #t)
     (cons 'brands no-brands)
-    (cons 'app (bad-app "nothing")))))
+    (cons 'app (bad-app "nothing"))
+    (cons 'method (bad-meth "nothing")))))
+
+;; get-dict : Value -> Dict
+(define (get-dict v)
+  v)
 
 ;; get-brands : Value -> Setof Symbol
 (define (get-brands v)
-  (obj-map-ref v 'brands))
+  (string-map-ref v 'brands))
+
+(define (p-opaque? v)
+  (string-map-has-key? v 'p-opaque))
+(define (p-opaque v)
+  (make-string-map
+    (list
+      (cons 'p-opaque v)
+      (cons 'brands no-brands)
+      (cons 'app obj-bad-app)
+      (cons 'method obj-bad-meth))))
+(define (p-opaque-val o)
+  (string-map-ref o 'p-opaque (lambda () (error "Got opaque of non-opaque"))))
 
 (define obj-bad-app (bad-app "object"))
+(define obj-bad-meth (bad-meth "object"))
 ;; mk-object : Dict -> Value
 (define (mk-object dict)
-  (obj-map-set* dict
+  (make-string-map
+    (append
       (list
         (cons 'p-object #t)
         (cons 'brands no-brands)
-        (cons 'app obj-bad-app))))
+        (cons 'app obj-bad-app)
+        (cons 'method obj-bad-meth))
+      dict)))
 
 (define num-bad-app (bad-app "number"))
+(define num-bad-meth (bad-meth "number"))
 ;; mk-num : Number -> Value
 (define (mk-num n)
-  (obj-map-set*
+  (string-map-set*
     meta-num-store
     (list
       (cons 'p-num n)
       (cons 'brands no-brands)
-      (cons 'app num-bad-app))))
+      (cons 'app num-bad-app)
+      (cons 'method num-bad-meth))))
 
 (define str-bad-app (bad-app "string"))
+(define str-bad-meth (bad-meth "string"))
 ;; mk-str : String -> Value
 (define (mk-str s)
-  (obj-map-set*
+  (string-map-set*
     meta-str-store
     (list
       (cons 'p-str s)
       (cons 'brands no-brands)
-      (cons 'app str-bad-app))))
+      (cons 'app str-bad-app)
+      (cons 'method str-bad-meth))))
 
-(define (shared-fun-dict f)
+(define (shared-fun-dict f m)
   (list
     (cons 'brands no-brands)
     (cons 'app f)
+    (cons 'method m)
     (cons 'p-fun #t)))
 
 ;; mk-fun : (Value ... -> Value) String -> Value
-(define (mk-fun f s)
-  (make-obj-map
-    (append (shared-fun-dict f)
+(define (mk-fun f m s)
+  (make-string-map
+    (append (shared-fun-dict f m)
     (list
       (cons "_doc" (mk-str s))
       (cons "_method" (mk-method-method f s))))))
 
 ;; mk-fun-nodoc : (Value ... -> Value) -> Value
-(define (mk-fun-nodoc f)
-  (make-obj-map
-    (append (shared-fun-dict f)
+(define (mk-fun-nodoc f m)
+  (make-string-map
+    (append (shared-fun-dict f m)
     (list
       (cons "_doc" nothing)
       (cons "_method" (mk-method-method-nodoc f))))))
 
-;; mk-internal-fun : (Value ... -> Value) -> Value
-(define (mk-internal-fun f)
-  (make-obj-map (shared-fun-dict f)))
-
+(define (mk-fun-nodoc-slow f)
+  (mk-fun-nodoc f (lambda (_ . args) (apply f args))))
+  
 (define method-bad-app (bad-app "method"))
 ;; mk-method-method : (Value ... -> Value) String -> p-method
 (define (mk-method-method f doc)
-  (make-obj-map
+  (make-string-map
     (list
       (cons 'brands no-brands)
       (cons 'app method-bad-app)
-      (cons 'p-method (λ (self) (mk-method f doc)))
+      (cons 'method (λ (self) (mk-method f doc)))
+      (cons 'p-method #t)
       (cons "_doc" (mk-str doc)))))
 
 ;; mk-method-method-nodoc : (Value ... -> Value) -> p-method
 (define (mk-method-method-nodoc f)
-  (make-obj-map
+  (make-string-map
     (list
       (cons 'brands no-brands)
       (cons 'app method-bad-app)
-      (cons 'p-method (λ (self) (mk-method-nodoc f)))
+      (cons 'method (λ (self) (mk-method-nodoc f)))
+      (cons 'p-method #t)
       (cons "_doc" nothing))))
 
 ;; mk-fun-method : (Value ... -> Value) String -> p-method
 (define (mk-fun-method f doc)
-  (make-obj-map
+  (make-string-map
     (list
       (cons 'brands no-brands)
       (cons 'app method-bad-app)
-      (cons 'p-method (λ (self) (mk-fun f doc)))
+      (cons 'method (λ (self) (mk-fun f (lambda args (apply f (rest args))) doc)))
+      (cons 'p-method #t)
       (cons "_doc" (mk-str doc)))))
+
+;; mk-fun-method : (Value ... -> Value) -> p-method
+(define (mk-fun-method-nodoc f)
+  (make-string-map
+    (list
+      (cons 'brands no-brands)
+      (cons 'app method-bad-app)
+      (cons 'method (λ (self) (mk-fun-nodoc f (lambda args (apply f (rest args))))))
+      (cons 'p-method #t)
+      (cons "_doc" nothing))))
+
 
 ;; mk-method : (Value ... -> Value) String -> Value
 (define (mk-method f doc)
-  (make-obj-map
+  (make-string-map
     (list
       (cons 'brands no-brands)
       (cons 'app method-bad-app)
-      (cons 'p-method f)
+      (cons 'method f)
+      (cons 'p-method #t)
       (cons "_fun" (mk-fun-method f doc))
       (cons "_doc" (mk-str doc)))))
 
 ;; mk-method-nodoc : Proc -> Value
 (define (mk-method-nodoc f)
-  (make-obj-map
+  (make-string-map
     (list
       (cons 'brands no-brands)
       (cons 'app method-bad-app)
-      (cons 'p-method f)
+      (cons 'method f)
+      (cons 'p-method #t)
       (cons "_fun" (mk-fun-method-nodoc f))
       (cons "_doc" nothing))))
 
@@ -421,27 +474,40 @@
 ;; pyret-error : Loc String String -> p-exn
 (define (pyret-error loc type message)
   (define full-error (exn+loc->message (mk-str message) loc))
-  (define obj (mk-object (make-obj-map 
+  (define obj (mk-object
     (list (cons "message" (mk-str message))
-          (cons "type" (mk-str type))))))
+          (cons "type" (mk-str type)))))
   (mk-pyret-exn full-error loc obj #t))
 
 ;; get-raw-field : Loc Value String -> Value
 (define (get-raw-field loc v f)
-  (obj-map-ref v f
+  (string-map-ref v f
     (lambda()
-      (raise (pyret-error loc "field-not-found" (format "~a was not found" f))))))
+      (raise (pyret-error loc "field-not-found" (format "~a was not found on ~a" f (to-string v)))))))
 
 ;; get-field : Loc Value String -> Value
 (define (get-field loc v f)
   (define vfield (get-raw-field loc v f))
   (cond
-    [(obj-map-has-key? vfield 'p-method)
-     (mk-fun (λ args (apply (obj-map-ref vfield 'p-method) (cons v args))) "")]
+    [(string-map-has-key? vfield 'p-method)
+     (mk-fun (λ args (apply (string-map-ref vfield 'p-method) (cons v args))) "")]
+    #;[(p-method? vfield)
+     (let [(curried
+            (mk-fun (λ args (apply (p-base-method vfield)
+                                   (cons v args)))
+                    (λ args (apply (p-base-method vfield)
+                                   (cons v (rest args))))
+                    (get-field loc vfield "_doc")))]
+       (if (has-field? vfield "tostring")
+           (extend loc curried
+                   (list
+                    (cons "tostring"
+                          (get-field loc vfield "tostring"))))
+           curried))]
     [else vfield]))
 
 (define (check-str v l)
-  (obj-map-ref v 'p-str
+  (string-map-ref v 'p-str
     (lambda ()
      (raise
        (pyret-error
@@ -452,7 +518,7 @@
 
 ;; apply-fun : Value Loc Value * -> Values
 (define (apply-fun v l . args)
-  (define f (obj-map-ref v 'app
+  (define f (string-map-ref v 'app
     (lambda ()
      (raise
       (pyret-error
@@ -499,7 +565,7 @@ And the object was:
 
 ;; add-brand : Value Symbol -> Value
 (define (add-brand v new-brand)
-  (obj-map-set v 'brands (set-add (get-brands v) new-brand)))
+  (string-map-set v 'brands (set-add (get-brands v) new-brand)))
 
 ;; has-brand? : Value Symbol -> Boolean
 (define (has-brand? v brand)
@@ -507,7 +573,7 @@ And the object was:
 
 ;; has-field? : Value String -> Boolean
 (define (has-field? v f)
-  (obj-map-has-key? v f))
+  (string-map-has-key? v f))
 
 ;; extend : Loc Value Dict -> Value
 (define (extend loc base extension)
@@ -515,8 +581,8 @@ And the object was:
 
 ;; structural-list? : Value -> Boolean
 (define (structural-list? v)
-  (and (obj-map-has-key? v "first")
-       (obj-map-has-key? v "rest")))
+  (and (string-map-has-key? v "first")
+       (string-map-has-key? v "rest")))
 
 ;; structural-list->list : Value -> Listof Value
 (define (structural-list->list lst)
@@ -529,29 +595,25 @@ And the object was:
 ;; mk-structural-list : ListOf Value -> Value
 (define (mk-structural-list lst)
   (cond
-    [(empty? lst) (mk-object (make-obj-map
-        `(("is-empty" . ,(mk-bool #t)))))]
-    [(cons? lst) (mk-object (make-obj-map
+    [(empty? lst) (mk-object
+        `(("is-empty" . ,(mk-bool #t))))]
+    [(cons? lst) (mk-object
         `(("first" . ,(first lst))
           ("is-empty" . ,(mk-bool #f))
-          ("rest" . ,(mk-structural-list (rest lst))))))]
+          ("rest" . ,(mk-structural-list (rest lst)))))]
     [else (error 'mk-structural-list (format "mk-structural-list got ~a" lst))]))
 
 ;; keys : Value -> Value
-(define (keys object)
-  (mk-structural-list (map mk-str (obj-map-keys (get-dict object)))))
-
-(define keys-pfun (mk-fun-nodoc keys))
+(define keys-pfun (pλ/internal (loc) (object)
+  (mk-structural-list (map mk-str (string-map-keys (get-dict object))))))
 
 ;; TODO(joe): Quickify
-(define (num-keys object)
-  (mk-num (obj-map-count object)))
-
-(define num-keys-pfun (mk-fun-nodoc num-keys))
+(define num-keys-pfun (pλ/internal (loc) (object)
+  (mk-num (string-map-count object))))
 
 (define has-field-pfun (pλ/internal (loc) (object field)
   (define the-field
-    (obj-map-ref field 'p-str
+    (string-map-ref field 'p-str
       (lambda ()
        (raise
         (pyret-error
@@ -576,14 +638,13 @@ And the object was:
 (define brander-pfun (pλ/internal (_) ()
   (define sym (gensym))
   (mk-object
-   (make-obj-map 
-    `(("brand" .
-       ,(mk-brander sym))
-      ("test" .
-       ,(mk-checker sym)))))))
+   `(("brand" .
+      ,(mk-brander sym))
+     ("test" .
+      ,(mk-checker sym))))))
 
 (define (pyret-true? v)
-  (obj-map-ref v 'p-bool #f))
+  (or (eq? v p-true) (string-map-ref v 'p-bool #f)))
 
 (define-syntax-rule (mk-prim-fun op opname wrapper (arg ...) (prop ...))
   (mk-prim-fun-default op opname wrapper (arg ...) (prop ...)
@@ -595,20 +656,20 @@ And the object was:
 
 (define-syntax-rule (mk-prim-fun-default op opname wrapper (arg ...) (prop ...) default)
   (pμ/internal (loc) (arg ...) ""
-    (wrapper (op (obj-map-ref arg prop default) ...))))
+    (wrapper (op (string-map-ref arg prop default) ...))))
 
 (define-syntax-rule (mk-lazy-prim op opname wrapper (arg1 arg2 ...) (prop1 prop2 ...))
-  (pμ/internal (loc) (arg1 arg2 ...) ""
+  (pμ/internal (loc) (arg1 arg2 ...) (symbol->string opname)
     (define (error)
       (define args-strs (list (to-string arg1) (to-string arg2) ...))
       (define args-str (string-join args-strs ", "))
       (define error-val (mk-str (format "Bad args to prim: ~a : ~a" opname args-str)))
       (raise (mk-pyret-exn (exn+loc->message error-val (get-top-loc)) (get-top-loc) error-val #f)))
-    (define (check1 arg1) (obj-map-ref arg1 prop1 error))
-    (define (check2 arg2) (obj-map-ref arg2 prop2 error))
+    (define (check1 arg1) (string-map-ref arg1 prop1 error))
+    (define (check2 arg2) (string-map-ref arg2 prop2 error))
     ...
     (wrapper (op (check1 arg1)
-                 (check2 arg2) ...))))
+                 (check2 ((string-map-ref arg2 'app))) ...))))
 
 (define-syntax-rule (mk-num-1 op opname)
   (mk-prim-fun op opname mk-num (n) ('p-num)))
@@ -622,7 +683,7 @@ And the object was:
 (define (meta-num)
   (when (not meta-num-store)
     (set! meta-num-store
-      (make-obj-map
+      (make-string-map
         `(("_plus" . ,(mk-num-2 + 'plus))
           ("_add" . ,(mk-num-2 + 'plus))
           ("_minus" . ,(mk-num-2 - 'minus))
@@ -642,6 +703,15 @@ And the object was:
           ("_greaterequal" . ,(mk-num-2-bool >= 'greaterequal))))))
   meta-num-store)
 
+;; Pyret's char-at just returns a single character string
+(define (char-at s n)
+  (substring s n (+ n 1)))
+
+(define (string-repeat s n)
+  (cond
+   [(= n 0) ""]
+   [else (string-append s (string-repeat s (- n 1)))]))
+
 ;; meta-str-store (Hashof String value)
 (define meta-str-store #f)
 (define (meta-str)
@@ -651,6 +721,9 @@ And the object was:
         `(("append" . ,(mk-prim-fun string-append 'append mk-str (s1 s2) ('p-str 'p-str)))
           ("_plus" . ,(mk-prim-fun string-append 'plus mk-str (s1 s2) ('p-str 'p-str)))
           ("contains" . ,(mk-prim-fun string-contains 'contains mk-bool (s1 s2) ('p-str 'p-str)))
+          ("substring" . ,(mk-prim-fun substring 'substring mk-str (s n1 n2) ('p-str 'p-num 'p-num)))
+          ("char-at" . ,(mk-prim-fun char-at 'char-at mk-str (s n) ('p-str 'p-num)))
+          ("repeat" . ,(mk-prim-fun string-repeat 'repeat mk-str (s n) ('p-str 'p-num)))
           ("length" . ,(mk-prim-fun string-length 'length mk-num (s) ('p-str)))
           ("tonumber" . ,(mk-prim-fun string->number 'tonumber mk-num (s) ('p-str)))
           ("_lessequals" . ,(mk-prim-fun string<=? 'lessequals mk-bool (s1 s2) ('p-str 'p-str)))
@@ -686,40 +759,51 @@ And the object was:
 ;; to-string : Value -> String
 (define (to-string v)
   (cond
-    [(obj-map-has-key? v 'p-nothing) "nothing"]
-    [(obj-map-has-key? v 'p-num) (format "~a" (obj-map-ref v 'p-num))]
-    [(obj-map-has-key? v 'p-str) (format "~a" (obj-map-ref v 'p-str))]
-    [(obj-map-has-key? v 'p-bool) (if (obj-map-ref v 'p-bool) "true" "false")]
-    [(obj-map-has-key? v 'p-method) "[[code]]"]
-    [(obj-map-has-key? v 'p-fun) "[[code]]"]
-    [(obj-map-has-key? v 'p-object)
-     (let ()
-       (define (to-string-raw-object h)
-         (define (field-to-string f v)
-           (format "~a: ~a" f (to-string v)))
-         (format "{ ~a }"
-                 (string-join (string-map-map h field-to-string) ", ")))
+    [(p-nothing? v) "nothing"]
+    [(p-num? v) (format "~a" (string-map-ref v 'p-num))]
+    [(p-str? v) (format "~a" (string-map-ref v 'p-str))]
+    [(p-bool? v) (if (string-map-ref v 'p-bool) "true" "false")]
+    [(p-method? v) "[[code]]"]
+    [(p-fun? v) "[[code]]"]
+    [(p-object? v)
+     (define (call-tostring v fallback)
        (if (has-field? v "tostring")
            (let [(m (get-raw-field dummy-loc v "tostring"))]
-                (obj-map-ref ((obj-map-ref m 'p-method
-                   (lambda () (to-string-raw-object v)))
-                 v) 'p-str))
-           (to-string-raw-object v)))]
+             (if (p-method? m)
+                 ;; NOTE(dbp): this will fail if tostring isn't defined
+                 ;; as taking only self.
+                 (let [(r ((string-map-ref m 'method) v))]
+                   (cond
+                    [(p-str? r) (string-map-ref r 'p-str)]
+                    [else (fallback)]))
+                 (fallback)))
+           (fallback)))
+        (let ()
+          (define (to-string-raw-object h)
+            ;; TODO(joe): filter non-string keys
+            (define (field-to-string f v)
+              (format "~a: ~a" f (to-string v)))
+            (format "{ ~a }"
+                    (string-join (string-map-map h field-to-string) ", ")))
+          (call-tostring
+           v
+           (λ () (to-string-raw-object v))))]
     [else (format "~a" v)]))
 
-(define tostring-pfun (mk-fun-nodoc (λ o (mk-str (to-string (first o))))))
+(define tostring-pfun (pλ/internal (loc) (o)
+  (mk-str (to-string o))))
 
-(define print-pfun (mk-fun-nodoc (λ o (begin (printf "~a\n" (to-string (first o))) nothing))))
-
+(define print-pfun (pλ/internal (loc) (o)
+  (begin (printf "~a\n" (to-string o)) nothing)))
 
 ;; check-brand-pfun : Loc -> Value * -> Value
 (define check-brand-pfun (pλ/internal (loc) (ck o s)
   (define (error)
-    (define typname (obj-map-ref s 'p-str))
+    (define typname (string-map-ref s 'p-str))
     (let [(val (mk-str (format "runtime: typecheck failed; expected ~a and got\n~a"
                        typname (to-string o))))]
      (raise (mk-pyret-exn (exn+loc->message val (get-top-loc)) (get-top-loc) val #f))))
-  (define b (obj-map-ref ((obj-map-ref ck 'app) o) 'p-bool error))
+  (define b (string-map-ref ((string-map-ref ck 'app) o) 'p-bool error))
   (if b o (error))))
 
 ;; exn+loc->message : Value Loc -> String
@@ -731,14 +815,11 @@ And the object was:
     (third l)
     (to-string v)))
 
-(define raise-pfun
-  (mk-internal-fun
-    (λ (o) (raise (mk-pyret-exn (exn+loc->message o (get-top-loc)) (get-top-loc) o #f)))))
+(define raise-pfun (pλ/internal (loc) (o)
+  (raise (mk-pyret-exn (exn+loc->message o (get-top-loc)) (get-top-loc) o #f))))
 
-(define is-nothing-pfun
-  (mk-internal-fun
-    (λ (specimen)
-      (mk-bool (equal? specimen nothing)))))
+(define is-nothing-pfun (pλ/internal (loc) (specimen)
+  (mk-bool (equal? specimen nothing))))
 
 ;; tie the knot of mutual state problems
 (void
@@ -746,26 +827,27 @@ And the object was:
   (meta-bool)
   (meta-str))
 
-(define p-true (obj-map-set*
+(define p-true (string-map-set*
   meta-bool-store
   (list
     (cons 'brands no-brands)
     (cons 'p-bool #t)
-    (cons 'app (bad-app "true")))))
-(define p-false (obj-map-set*
+    (cons 'app (bad-app "true"))
+    (cons 'method (bad-meth "true")))))
+(define p-false (string-map-set*
   meta-bool-store
   (list
     (cons 'brands no-brands)
     (cons 'p-bool #f)
-    (cons 'app (bad-app "false")))))
+    (cons 'app (bad-app "false"))
+    (cons 'method (bad-meth "false")))))
 ;; mk-bool : Boolean -> Value
 (define (mk-bool b)
   (if b p-true p-false))
 (define p-else p-true)
 (define p-pi (mk-num pi))
 
-(define Any
-  (mk-fun-nodoc (λ o (mk-bool #t))))
+(define Any (pλ/internal (loc) (_) p-true))
 
 (define-syntax-rule (mk-pred name test)
   (define name
@@ -773,18 +855,40 @@ And the object was:
       (format "Built-in predicate for ~a" 'name)
       (mk-bool (test arg)))))
 
-(define-syntax (p-method? v)
-  (obj-map-has-key? v 'p-method))
-(define-syntax (p-num? v)
-  (obj-map-has-key? v 'p-num))
-(define-syntax (p-str? v)
-  (obj-map-has-key? v 'p-str))
-(define-syntax (p-bool? v)
-  (obj-map-has-key? v 'p-bool))
-(define-syntax (p-fun? v)
-  (obj-map-has-key? v 'p-fun))
-(define-syntax (p-object? v)
-  (obj-map-has-key? v 'p-object))
+(define (p-nothing? v)
+  (string-map-has-key? v 'p-nothing))
+(define (p-num? v)
+  (string-map-has-key? v 'p-num))
+(define (p-num-n v)
+  (string-map-ref v 'p-num (λ () (error (format "p-num-n on non-p-num: ~a" v)))))
+(define (p-str? v)
+  (string-map-has-key? v 'p-str))
+(define (p-str-s v)
+  (string-map-ref v 'p-str (λ () (error (format "p-str-s on non-p-str: ~a" v)))))
+(define (p-bool? v)
+  (string-map-has-key? v 'p-bool))
+(define (p-bool-b v)
+  (string-map-ref v 'p-bool (λ () (error (format "p-bool-s on non-p-bool: ~a" v)))))
+(define (p-fun? v)
+  (string-map-has-key? v 'p-fun))
+(define (p-fun-f v)
+  (string-map-ref v 'app))
+(define (p-method? v)
+  (string-map-has-key? v 'p-method))
+(define (p-method-m v)
+  (string-map-ref v 'method))
+(define (p-object? v)
+  (string-map-has-key? v 'p-object))
+
+(define (pyret-val? v)
+  (and
+    (string-map? v)
+    (string-map-has-key? v 'brands)))
+
+(define (get-string-dict v)
+  (foldr (lambda (key h) (hash-set h key (string-map-ref v key)))
+         (make-immutable-hash (list))
+         (filter string? (string-map-keys v))))
 
 (mk-pred Number p-num?)
 (mk-pred String p-str?)

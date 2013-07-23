@@ -62,6 +62,10 @@
 
 (define literals (test-suite "literals"
   (check/block "'str'" (s-str _ "str"))
+  (check/block "'multi
+line string'" (s-str _ "multi\nline string"))
+  #;(check/block "\"multi
+line string\"" (s-str _ "multi\nline string"))
   (check/block "5" (s-num _ 5))
   (check/block "-7" (s-num _ -7))
   (check/block "10.2" (s-num _ 10.2))
@@ -91,6 +95,9 @@
   ;; What we should get back is the actual escape characters.
   (check/block "'string\\nwith\\r\\nspecial\\tcharacters'"
                (s-str _ "string\nwith\r\nspecial\tcharacters"))
+
+  (check/block "\"\\\"\"" (s-str _ "\""))
+  (check/block "'\\''" (s-str _ "'"))
 ))
 
 (define methods (test-suite "methods"
@@ -284,6 +291,12 @@
   (check/block "var x :: list.List = 4"
                (s-var _ (s-bind _ 'x (a-dot _ 'list 'List))
                       (s-num _ 4)))
+
+  (check/block "var x :: list.List<A> = 4"
+               (s-var _ (s-bind _ 'x (a-app _ (a-dot _ 'list 'List)
+                                            (list (a-name _ 'A))))
+                      (s-num _ 4)))
+
 ))
 
 (define anon-func (test-suite "anon-func"
@@ -360,7 +373,7 @@
     (s-var _
            (s-bind _ 'x
                      (a-pred _
-                             (a-app _ 'List
+                             (a-app _ (a-name _ 'List)
                                       (list (a-name _ 'String)))
                              (s-dot _ (s-id _ 'list)
                                       'is-cons)))
@@ -368,6 +381,31 @@
 ))
 
 (define cases (test-suite "cases"
+
+  (check/block "if false: 5 else: 42 end"
+               (s-if-else _ (list (s-if-branch _ (s-bool _ #f) (s-block _ (list (s-num _ 5)))))
+                            (s-block _ (list (s-num _ 42)))))
+
+  (check/block "if false: 5 else if true: 24 end"
+               (s-if _ (list (s-if-branch _ (s-bool _ #f) (s-block _ (list (s-num _ 5))))
+                             (s-if-branch _ (s-bool _ #t) (s-block _ (list (s-num _ 24)))))))
+
+  (check/block "if false: 5 else if true: 24 else: 6 end"
+               (s-if-else _ (list (s-if-branch _ (s-bool _ #f) (s-block _ (list (s-num _ 5))))
+                                  (s-if-branch _ (s-bool _ #t) (s-block _ (list (s-num _ 24)))))
+                          (s-block _ (list (s-num _ 6)))))
+
+  (check/block "if 0 < 1: 5 else if 1 < 0: 24 else: 6 end"
+               (s-if-else _ (list (s-if-branch _ (s-op _ 'op< (s-num _ 0) (s-num _ 1))
+                                                 (s-block _ (list (s-num _ 5))))
+                                  (s-if-branch _ (s-op _ 'op< (s-num _ 1) (s-num _ 0)) (s-block _ (list (s-num _ 24)))))
+                          (s-block _ (list (s-num _ 6)))))
+
+  (check/block "cases(List) 5: | empty() => 1 end"
+               (s-cases _ (s-id _ 'List) (s-num _ 5)
+                  (list
+                    (s-cases-branch _ 'empty empty (s-block _ (list (s-num _ 1)))))))
+
   (check/block "case: | true => 1 | false => 2 end" 
                (s-case _ (list (s-case-branch _ (s-bool _ #t) (s-block _ (list (s-num _ 1))))
                                (s-case-branch _ (s-bool _ #f) (s-block _ (list (s-num _ 2)))))))
@@ -406,7 +444,8 @@
                   _ 
                   'cons 
                   (list (s-bind _ 'field (a-blank)) 
-                        (s-bind _ 'l (a-app _ 'List (list (a-name _ 'a)))))
+                        (s-bind _ 'l (a-app _ (a-name _ 'List)
+                                            (list (a-name _ 'a)))))
                   (list))) (list)
                   (s-block _ _)))
 

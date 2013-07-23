@@ -8,7 +8,8 @@
 	 "test-utils.rkt"
 	 "../lang/runtime.rkt")
 
-(define PROFILE? #f)
+(define PROFILE? #t)
+(compile-context-preservation-enabled #t)
 
 (define (benchmark-path sub) (build-path "benchmarks/" sub))
 (define (benchmark-run filename passing)
@@ -23,7 +24,7 @@
       #;(check-pyret-match/check pyret-file _ passing passing 0 0 0))
     (time (dynamic-require racket-file #f))
     (if PROFILE?
-        (time (profile-thunk run-test))
+        (time (profile-thunk run-test #:delay 0.01 #:threads #t))
         (time (run-test)))))
 
 (define all (test-suite "all"

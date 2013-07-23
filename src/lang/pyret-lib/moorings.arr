@@ -12,34 +12,41 @@ end
 # BUILTINS
 
 fun mklist(obj):
+  doc: "creates a List from something with `first` and `rest` fields, recursively"
   case:
     | obj.is-empty => empty
-    | else => link(obj.first, mklist(obj.rest))
+    | true => link(obj.first, mklist(obj.rest))
   end
 end
 
 fun keys(obj):
+  doc: "returns a List of the keys of an object, as strings"
   mklist(prim-keys(obj))
 end
 
 fun has-field(obj, name):
+  doc: "returns true if the object has a field with the name specified"
   prim-has-field(obj, name)
 end
 
-fun num-keys(obj): prim-num-keys(obj) end
+fun num-keys(obj):
+  doc: "returns the Number of fields in an object"
+  prim-num-keys(obj)
+end
 
 fun equiv(obj1, obj2):
-  doc: "Check if two objects have all the same keys with equiv fields"
+  doc: "Check if two objects are equal via an _equals method, or
+        have all the same keys with equiv fields"
   fun all_same(obj1, obj2):
     case:
       | Method(obj1) or Function(obj1) => false
       | has-field(obj1, "_equals") => obj1._equals(obj2)
-      | else =>
+      | true =>
         left_keys = keys(obj1)
         for fold(same from true, key from left_keys):
           case:
             | not (has-field(obj2, key)) => false
-            | else =>
+            | true =>
               left_val = obj1.[key]
               right_val = obj2.[key]
               same and equiv(left_val, right_val)
@@ -50,7 +57,7 @@ fun equiv(obj1, obj2):
   case:
     | has-field(obj1, "_equals") => obj1._equals(obj2)
     | num-keys(obj1)._equals(num-keys(obj2)) => all_same(obj1, obj2)
-    | else => false
+    | true => false
   end
 check:
   eq = checkers.check-equals
@@ -86,7 +93,7 @@ data List:
 
     length(self): 0 end,
 
-    each(self, f): empty end,
+    each(self, f): nothing end,
 
     map(self, f): empty end,
 
@@ -106,7 +113,7 @@ data List:
       case:
         | n == 0 => empty
         | n > 0 => raise('take: took too many')
-        | else => raise('take: invalid argument')
+        | true => raise('take: invalid argument on empty list: ' + n.tostring())
       end
     end,
 
@@ -114,7 +121,7 @@ data List:
       case:
         | n == 0 => empty
         | n > 0 => raise('drop: dropped too many')
-        | else => raise('drop: invalid argument')
+        | true => raise('drop: invalid argument')
       end
     end,
 
@@ -123,14 +130,14 @@ data List:
     get(self, n):
       case:
         | n >= 0 => raise('get: n too large: '.append(n.tostring()))
-        | else => raise('get: invalid argument')
+        | true => raise('get: invalid argument')
       end
     end,
 
     set(self, n, e):
       case:
         | n >= 0 => raise('set: n too large: '.append(n.tostring()))
-        | else => raise('set: invalid argument')
+        | true => raise('set: invalid argument')
       end
     end,
     
@@ -140,7 +147,9 @@ data List:
 
     sort-by(self, cmp, eq): self end,
 
-    sort(self): self end
+    sort(self): self end,
+
+    join-str(self, str): "" end
 
   | link(first, rest :: List) with:
 
@@ -153,7 +162,7 @@ data List:
     filter(self, f):
       case:
         | f(self.first) => self.first^link(self.rest.filter(f))
-        | else => self.rest.filter(f)
+        | true => self.rest.filter(f)
       end
     end,
 
@@ -168,7 +177,7 @@ data List:
     last(self):
       case:
         | is-empty(self.rest) => self.first
-        | else => self.rest.last()
+        | true => self.rest.last()
       end
     end,
 
@@ -180,7 +189,7 @@ data List:
       case:
         | n == 0 => empty
         | n >= 0 => self.first^link(self.rest.take(n - 1))
-        | else => raise('take: invalid argument')
+        | true => raise('take: invalid argument on non-empty list: ' + n.tostring())
       end
     end,
 
@@ -188,7 +197,7 @@ data List:
       case:
         | n == 0 => self
         | n > 0 => self.rest.drop(n - 1)
-        | else => raise('drop: invalid argument')
+        | true => raise('drop: invalid argument')
       end
     end,
 
@@ -196,7 +205,7 @@ data List:
       case:
         | n > 0 => self.rest.get(n - 1)
         | n == 0 => self.first
-        | else => raise('get: invalid argument: ' + n.tostring())
+        | true => raise('get: invalid argument: ' + n.tostring())
       end
     end,
 
@@ -204,7 +213,7 @@ data List:
       case:
         | n > 0 => self.first ^ link(self.rest.set(n - 1, e))
         | n == 0 => e ^ link(self.rest)
-        | else => raise('set: invalid argument: ' + n.tostring())
+        | true => raise('set: invalid argument: ' + n.tostring())
       end
     end,
         
@@ -213,7 +222,7 @@ data List:
         | is-link(other) =>
           others-equal = (self.first == other.first)
           others-equal and (self.rest == other.rest)
-        | else => false
+        | true => false
       end
     end,
 
@@ -235,10 +244,21 @@ data List:
 
     sort(self):
       self.sort-by(fun(e1,e2): e1 < e2 end, fun(e1,e2): e1 == e2 end)
+    end,
+
+    join-str(self, str):
+      if is-link(self.rest):
+         tostring(self.first) + str + self.rest.join-str(str)
+      else:
+         tostring(self.first)
+      end
     end
 
 sharing:
-  push(self, elt): link(elt, self) end,
+  push(self, elt):
+    doc: "adds an element to the front of the list, returning a new list"
+    link(elt, self)
+  end,
   _plus(self, other): self.append(other) end
 
 check:
@@ -248,22 +268,24 @@ check:
 end
 
 fun range(start, stop):
+  doc: "creates a list of numbers, starting with start, ending with stop-1"
   case:
-    | start._greaterthan(stop) => raise("range: start greater than stop: ("
-                                        + start.tostring()
-                                        + ", "
-                                        + stop.tostring()
-                                        + ")")
-    | start._equals(stop)      => empty
-    | start._lessthan(stop)    => link(start, range(start + 1, stop))
+    | start < stop => link(start, range(start + 1, stop))
+    | start == stop => empty
+    | start > stop  => raise("range: start greater than stop: ("
+                            + start.tostring()
+                            + ", "
+                            + stop.tostring()
+                            + ")")
   end
 end
 
 fun repeat(n :: Number, e :: Any):
+  doc: "creates a list with n copies of e"
   case:
-    | n < 0 => raise("repeat: can't have a negative argument'")
+    | n > 0 => link(e, repeat(n - 1, e))
     | n == 0 => empty
-    | else => link(e, repeat(n - 1, e))
+    | n < 0 => raise("repeat: can't have a negative argument'")
   end
 check:
   eq = checkers.check-equals
@@ -272,68 +294,87 @@ check:
   eq("repeat 3", repeat(3, -1), [-1, -1, -1])
   eq("repeat 1", repeat(1, "foo"), ["foo"])
 end
-  
-fun map(f, lst :: List):
+
+fun filter(f, lst :: List):
+  doc: "returns the subset of lst for which f(elem) is true"
   case:
     | is-empty(lst) => empty
-    | else => f(lst.first)^link(map(f, lst.rest))
+    | true =>
+      if f(lst.first):
+        lst.first^link(filter(f, lst.rest))
+      else:
+        filter(f, lst.rest)
+      end
+  end
+end
+  
+fun map(f, lst :: List):
+  doc: "returns a list made up of f(elem) for each elem in lst"
+  case:
+    | is-empty(lst) => empty
+    | true => f(lst.first)^link(map(f, lst.rest))
   end
 end
 
 fun map2(f, l1 :: List, l2 :: List):
+  doc: "returns a list made up of f(elem1, elem2) for each elem1 in l1, elem2 in l2"
   case:
     | is-empty(l1) or is-empty(l2) => empty
-    | else => f(l1.first, l2.first)^link(map2(f, l1.rest, l2.rest))
+    | true => f(l1.first, l2.first)^link(map2(f, l1.rest, l2.rest))
   end
 end
 
 fun map3(f, l1 :: List, l2 :: List, l3 :: List):
+  doc: "returns a list made up of f(e1, e2, e3) for each e1 in l1, e2 in l2, e3 in l3"
   case:
     | is-empty(l1) or is-empty(l2) or is-empty(l3) => empty
-    | else => f(l1.first, l2.first, l3.first)^link(map3(f, l1.rest, l2.rest, l3.rest))
+    | true => f(l1.first, l2.first, l3.first)^link(map3(f, l1.rest, l2.rest, l3.rest))
   end
 end
 
 fun map4(f, l1 :: List, l2 :: List, l3 :: List, l4 :: List):
+  doc: "returns a list made up of f(e1, e2, e3, e4) for each e1 in l1, e2 in l2, e3 in l3, e4 in l4"
   case:
     | is-empty(l1) or is-empty(l2) or is-empty(l3) or is-empty(l4) => empty
-    | else => f(l1.first, l2.first, l3.first, l4.first)^link(map4(f, l1.rest, l2.rest, l3.rest, l4.rest))
+    | true => f(l1.first, l2.first, l3.first, l4.first)^link(map4(f, l1.rest, l2.rest, l3.rest, l4.rest))
   end
 end
 
 fun map_n(f, n :: Number, lst :: List):
+  doc: "returns a list made up of f(n, e1), f(n+1, e2) .. for e1, e2 ... in lst"
   case:
     | is-empty(lst) => empty
-    | else => f(n, lst.first)^link(map_n(f, n + 1, lst.rest))
+    | true => f(n, lst.first)^link(map_n(f, n + 1, lst.rest))
   end
 end
 
 fun map2_n(f, n :: Number, l1 :: List, l2 :: List):
   case:
     | is-empty(l1) or is-empty(l2) => empty
-    | else => f(n, l1.first, l2.first)^link(map2_n(f, n + 1, l1.rest, l2.rest))
+    | true => f(n, l1.first, l2.first)^link(map2_n(f, n + 1, l1.rest, l2.rest))
   end
 end
 
 fun map3_n(f, n :: Number, l1 :: List, l2 :: List, l3 :: List):
   case:
     | is-empty(l1) or is-empty(l2) or is-empty(l3) => empty
-    | else => f(n, l1.first, l2.first, l3.first)^link(map3_n(f, n + 1, l1.rest, l2.rest, l3.rest))
+    | true => f(n, l1.first, l2.first, l3.first)^link(map3_n(f, n + 1, l1.rest, l2.rest, l3.rest))
   end
 end
 
 fun map4_n(f, n :: Number, l1 :: List, l2 :: List, l3 :: List, l4 :: List):
   case:
     | is-empty(l1) or is-empty(l2) or is-empty(l3) or is-empty(l4) => empty
-    | else => f(n, l1.first, l2.first, l3.first, l4.first)^link(map4(f, n + 1, l1.rest, l2.rest, l3.rest, l4.rest))
+    | true => f(n, l1.first, l2.first, l3.first, l4.first)^link(map4(f, n + 1, l1.rest, l2.rest, l3.rest, l4.rest))
   end
 end
 
 fun each(f, lst :: List):
+  doc: "Calls f for each elem in lst, and returns nothing"
   fun help(lst):
     case:
       | is-empty(lst) => nothing
-      | else =>
+      | true =>
         f(lst.first)
         help(lst.rest)
     end
@@ -342,10 +383,11 @@ fun each(f, lst :: List):
 end
 
 fun each2(f, l1 :: List, l2 :: List):
+  doc: "Calls f on each pair of corresponding elements in l1 and l2, and returns nothing.  Stops after the shortest list"
   fun help(l1, l2):
     case:
       | is-empty(l1) or is-empty(l2) => nothing
-      | else =>
+      | true =>
         f(l1.first, l2.first)
         help(l1.rest, l2.rest)
     end
@@ -354,10 +396,11 @@ fun each2(f, l1 :: List, l2 :: List):
 end
 
 fun each3(f, l1 :: List, l2 :: List, l3 :: List):
+  doc: "Calls f on each triple of corresponding elements in l1, l2 and l3, and returns nothing.  Stops after the shortest list"
   fun help(l1, l2, l3):
     case:
       | is-empty(l1) or is-empty(l2) or is-empty(l3) => nothing
-      | else =>
+      | true =>
         f(l1.first, l2.first, l3.first)
         help(l1.rest, l2.rest, l3.rest)
     end
@@ -366,10 +409,11 @@ fun each3(f, l1 :: List, l2 :: List, l3 :: List):
 end
 
 fun each4(f, l1 :: List, l2 :: List, l3 :: List, l4 :: List):
+  doc: "Calls f on each tuple of corresponding elements in l1, l2, l3 and l4, and returns nothing.  Stops after the shortest list"
   fun help(l1, l2, l3, l4):
     case:
       | is-empty(l1) or is-empty(l2) or is-empty(l3) or is-empty(l4) => nothing
-      | else =>
+      | true =>
         f(l1.first, l2.first, l3.first, l4.first)
         help(l1.rest, l2.rest, l3.rest, l4.rest)
     end
@@ -381,7 +425,7 @@ fun each_n(f, n :: Number, lst:: List):
   fun help(n, lst):
     case:
       | is-empty(lst) => nothing
-      | else =>
+      | true =>
         f(n, lst.first)
         help(n + 1, lst.rest)
     end
@@ -393,7 +437,7 @@ fun each2_n(f, n :: Number, l1 :: List, l2 :: List):
   fun help(n, l1, l2):
     case:
       | is-empty(l1) or is-empty(l2) => nothing
-      | else =>
+      | true =>
         f(n, l1.first, l2.first)
         help(n + 1, l1.rest, l2.rest)
     end
@@ -405,7 +449,7 @@ fun each3_n(f, n :: Number, l1 :: List, l2 :: List, l3 :: List):
   fun help(n, l1, l2, l3):
     case:
       | is-empty(l1) or is-empty(l2) or is-empty(l3) => nothing
-      | else =>
+      | true =>
         f(n, l1.first, l2.first, l3.first)
         help(n + 1, l1.rest, l2.rest, l3.rest)
     end
@@ -417,7 +461,7 @@ fun each4_n(f, n :: Number, l1 :: List, l2 :: List, l3 :: List, l4 :: List):
   fun help(n, l1, l2, l3, l4):
     case:
       | is-empty(l1) or is-empty(l2) or is-empty(l3) or is-empty(l4) => nothing
-      | else =>
+      | true =>
         f(n, l1.first, l2.first, l3.first, l4.first)
         help(n + 1, l1.rest, l2.rest, l3.rest, l4.rest)
     end
@@ -428,28 +472,28 @@ end
 fun fold(f, base, lst :: List):
   case:
     | is-empty(lst) => base
-    | else => fold(f, f(base, lst.first), lst.rest)
+    | true => fold(f, f(base, lst.first), lst.rest)
   end
 end
 
 fun fold2(f, base, l1 :: List, l2 :: List):
   case:
     | is-empty(l1) or is-empty(l2) => base
-    | else => fold2(f, f(base, l1.first, l2.first), l1.rest, l2.rest)
+    | true => fold2(f, f(base, l1.first, l2.first), l1.rest, l2.rest)
   end
 end
 
 fun fold3(f, base, l1 :: List, l2 :: List, l3 :: List):
   case:
     | is-empty(l1) or is-empty(l2) or is-empty(l3) => base
-    | else => fold3(f, f(base, l1.first, l2.first, l3.first), l1.rest, l2.rest, l3.rest)
+    | true => fold3(f, f(base, l1.first, l2.first, l3.first), l1.rest, l2.rest, l3.rest)
   end
 end
 
 fun fold4(f, base, l1 :: List, l2 :: List, l3 :: List, l4 :: List):
   case:
     | is-empty(l1) or is-empty(l2) or is-empty(l3) or is-empty(l4) => base
-    | else => fold4(f, f(base, l1.first, l2.first, l3.first, l4.first), l1.rest, l2.rest, l3.rest, l4.rest)
+    | true => fold4(f, f(base, l1.first, l2.first, l3.first, l4.first), l1.rest, l2.rest, l3.rest, l4.rest)
   end
 end
 
@@ -462,6 +506,7 @@ list = {
 
     range: range,
     repeat: repeat,
+    filter: filter,
     map: map,
     map2: map2,
     map3: map3,
@@ -486,7 +531,7 @@ list = {
 
 data Location:
   | location(file :: String, line, column) with:
-    equals(self, other):
+    _equals(self, other):
       is-location(other) and
       (self.file == other.file) and
       (self.line == other.line) and
@@ -508,9 +553,14 @@ data Error:
     name(self): "Field not found" end
   | field-non-string(message :: String, location :: Location) with:
     name(self): "Non-string in field name" end
+  | cases-miss(message :: String, location :: Location) with:
+    name(self): "No cases matched" end
+  | invalid-case(message :: String, location :: Location) with:
+    name(self): "Invalid case" end
   | lazy-error(message :: String, location :: Location) with:
     name(self): "Email joe@cs.brown.edu or dbpatter@cs.brown.edu and complain that they were lazy" end
 sharing:
+  tostring(self): self.format() end,
   format(self):
     self.location.format().append(":\n").append(self.name()).append(": ").append(self.message) end
 end
@@ -526,9 +576,9 @@ fun make-error(obj):
         | (type == "opaque") => opaque-error(msg, loc)
         | (type == "field-not-found") => field-not-found(msg, loc)
         | (type == "field-non-string") => field-non-string(msg, loc)
-        | else => lazy-error(msg, loc)
+        | true => lazy-error(msg, loc)
       end
-    | else => obj.value
+    | true => obj.value
   end
 end
 
@@ -537,6 +587,10 @@ error = {
   is-opaque-error : is-opaque-error,
   field-not-found: field-not-found,
   is-field-not-found: is-field-not-found,
+  cases-miss: cases-miss,
+  is-cases-miss: is-cases-miss,
+  invalid-case: invalid-case,
+  is-invalid-case: is-invalid-case,
   make-error: make-error,
   Error: Error,
   Location: Location,
@@ -548,9 +602,11 @@ error = {
 
 data Option:
   | none with:
-    orelse(self, v): v end
+      orelse(self, v): v end,
+      andthen(self, f): self end
   | some(value) with:
-    orelse(self, v): self.value end
+      orelse(self, v): self.value end,
+      andthen(self, f): f(self.value) end
 sharing:
   tostring(self):
     case:
@@ -584,7 +640,7 @@ fun check-equals(name, val1, val2):
     case:
       | (val1 == val2) =>
         current-results := current-results.push(success(name))
-      | else =>
+      | true =>
         current-results :=
           current-results.push(failure(name, "Values not equal: \n" +
                                        tostring(val1) +
@@ -601,7 +657,7 @@ fun check-pred(name, val1, pred):
     case:
       | pred(val1) =>
         current-results := current-results.push(success(name))
-      | else =>
+      | true =>
         current-results :=
           current-results.push(failure(name, "Value didn't satisfy predicate: " +
                                        tostring(val1) +
@@ -626,7 +682,7 @@ fun run-checks(checks):
       case:
         | has-field(lst, 'first') =>
           { first: lst.first, rest: lst-to-structural(lst.rest), is-empty: false}
-        | else =>
+        | true =>
           { is-empty: true }
       end
     end

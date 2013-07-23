@@ -1,7 +1,5 @@
 #lang pyret
 
-import profile as P
-
 fun build-some-lists(n):
   case:
     | (n <= 0) => []
@@ -9,4 +7,4 @@ fun build-some-lists(n):
   end
 end
 
-P.profile(fun: build-some-lists(1000) end)
+build-some-lists(1000)

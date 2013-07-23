@@ -22,6 +22,15 @@
  "var x :: String = 'hello' x"
  (p:mk-str "hello"))
 
+(check-pyret
+ "var x :: list.List = [1]
+  x.first"
+ (p:mk-num 1))
+
+(check-pyret
+ "var x :: list.List<Foo> = [1]
+  x.first"
+ (p:mk-num 1))
 
 (check-pyret-exn "var x :: Number = true" "runtime:")
 (check-pyret "var x :: Number = 48 x" forty8)
@@ -102,7 +111,7 @@
     case:
       | x._equals(0) => true
       | x._equals(1) or (x._equals(-1)) => false
-      | else => even(x._minus(2))
+      | true => even(x._minus(2))
     end
   end
   x :: Number(even) = 5"
@@ -113,7 +122,7 @@
     case:
       | x._equals(0) => true
       | x._equals(1) or (x._equals(-1)) => false
-      | else => even(x._minus(2))
+      | true => even(x._minus(2))
     end
   end
   x :: Number(even) = 10 x"

@@ -20,7 +20,7 @@
 (define constants (test-suite
   "constants and literals"
 
-  (check-pyret-match "5" (p:p-num (hash-table) x _ 5))
+  (check-pyret-match "5" (p:p-num (hash-table) x _ _ 5))
   (check-pyret "5" five)
   (check-pyret-fail "2" five)
 
@@ -28,14 +28,22 @@
 
   (check-pyret "'5'" (p:mk-str "5"))
 
-  (check-pyret-match "true" (p:p-bool _ _ _ #t))
-  (check-pyret-match "false" (p:p-bool _ _ _ #f))
+  (check-pyret-match "true" (p:p-bool _ _ _ _ #t))
+  (check-pyret-match "false" (p:p-bool _ _ _ _ #f))
 
   (check-pyret "{x:5}" (p:mk-object (make-immutable-hash (list (cons "x" five))))) 
   (check-pyret "{['x']:5}" (p:mk-object (make-immutable-hash (list (cons "x" five)))))
   (check-pyret "f = 'x' {[f]:5}" (p:mk-object (make-immutable-hash (list (cons "x" five)))))
 
   (check-pyret "{['x'.append('y')]:5}" (p:mk-object (make-immutable-hash (list (cons "xy" five)))))
+
+  (check-pyret "'fod'.substring(1,2)" (p:mk-str "o"))
+
+  (check-pyret "'fod'.char-at(1)" (p:mk-str "o"))
+
+  (check-pyret "'fod'.repeat(1)" (p:mk-str "fod"))
+  (check-pyret "'fod'.repeat(0)" (p:mk-str ""))
+  (check-pyret "'fod'.repeat(3)" (p:mk-str "fodfodfod"))
   ))
 
 (define functions (test-suite
@@ -82,22 +90,46 @@
     "5(raise('foo'))"
     "foo")
 
+  ;; tostring on functions
+  (check-pyret-match "fun f(x): x end f.tostring()"
+             (p:p-str _ _ _ _ "fun f(x): '' end"))
+  
+  (check-pyret-match "fun f(x): doc: 'great' x end f.tostring()"
+               (p:p-str _ _ _ _ "fun f(x): 'great' end"))
+
+  (check-pyret-match "(fun(x): x end).tostring()"
+               (p:p-str _ _ _ _ "fun (x): '' end"))
+
+  (check-pyret-match "(fun(x): doc: 'great' x end).tostring()"
+               (p:p-str _ _ _ _ "fun (x): 'great' end"))
+
+  (check-pyret-match "(fun(x :: Number): doc: 'great' x end).tostring()"
+               (p:p-str _ _ _ _ "fun (x): 'great' end"))
+
 ))
 
 
 (define brands (test-suite "brands"
 
-  (check-pyret-match "brander()" (p:p-object (hash-table) (hash-table ("brand" _) ("test" _)) _))
+  (check-pyret-match "brander()" (p:p-object (hash-table) (hash-table ("brand" _) ("test" _)) _ _))
   (check-pyret-match "fun f(z): x = brander() y = x.brand(z) y end f(2)"
-                     (p:p-num (hash-table _) _ _ 2))
+                     (p:p-num (hash-table _) _ _ _ 2))
   (check-pyret-match "fun f(z): x = brander() y = x.brand(z) x.test(y) end f(2)"
-                     (p:p-bool _ _ _ #t))
+                     (p:p-bool _ _ _ _ #t))
   (check-pyret-match "fun f(y): x = brander() x.test(y) end f(2)"
-                     (p:p-bool _ _ _ #f))
+                     (p:p-bool _ _ _ _ #f))
   (check-pyret-match "fun f(z): x = brander() y = brander() u = x.brand(z) y.test(u) end f(3)"
-                     (p:p-bool _ _ _ #f))
+                     (p:p-bool _ _ _ _ #f))
   (check-pyret-match "fun f(z): x = brander() y = brander() u = x.brand(z) w = y.brand(u) x.test(w) end f(3)"
-                     (p:p-bool _ _ _ #t))
+                     (p:p-bool _ _ _ _ #t))
+
+  (check-pyret
+    "b = brander()
+     true-branded = b.brand(true)
+     case:
+       | true-branded => 5
+     end"
+     five)
   ))
 
 
@@ -107,8 +139,8 @@
 
 (define cases (test-suite "cases"
   (check-pyret "case: | true => 2 | false => 1 end" two)
-  (check-pyret "case: | false => 1 | else => 2 end" two)
-  (check-pyret "case: | else => 2 end" two)
+  (check-pyret "case: | false => 1 | true => 2 end" two)
+  (check-pyret "case: | true => 2 end" two)
   (check-pyret "case: | false => 2 | true => 10 end" ten)
   (check-pyret "case: | true => 2 | true => 1 end" two)
   (check-pyret "case: | 3._lessthan(2) => 10 | true => 2 end" two)
@@ -141,6 +173,23 @@
   "
   nothing)
 
+  (check-pyret-exn "if false: 5 end" "if: no tests matched")
+  (check-pyret-exn "if false: 5 else if false: 8 end" "if: no tests matched")
+  (check-pyret "if true: 5 end" five)
+  (check-pyret "if false: 5 else if true: 6 end" (p:mk-num 6))
+  (check-pyret "if true: 5 else if true: 6 end" five)
+  (check-pyret "if true: 5 else: 6 end" five)
+  (check-pyret "if false: 5 else if false: 6 else: 7 end" (p:mk-num 7))
+  (check-pyret "if false: 5 else if false: 6 else if false: 8 else: 7 end"
+               (p:mk-num 7))
+  (check-pyret "if false: 5 else if false: 6 else if true: 8 else: 7 end"
+               (p:mk-num 8))
+  (check-pyret "if false: 5 else if false: 6 else if true: 8 end"
+               (p:mk-num 8))
+
+  (check-pyret-match/check "pyret/cases/cases1.arr" _ 4 4 0 0 0)
+  (check-pyret-match/check "pyret/cases/cases-list.arr" _ 4 4 0 0 0)
+  (check-pyret-match/check "pyret/cases/cases-raw-fun.arr" _ 3 3 0 0 0)
 ))
 
 
@@ -203,7 +252,7 @@
 
   (check-pyret-match
     "data Foo: | bar() end bar._doc"
-    (p:p-str _ _ _ _))
+    (p:p-str _ _ _ _ _))
 
   (check-pyret
    "data List:
@@ -253,7 +302,7 @@
      | singleton
     end
     singleton"
-    (p:p-object _ _ _))
+    (? p:p-object? _))
 
   (check-pyret
    "data Foo:
@@ -311,7 +360,7 @@
   (check-pyret-match
    "import '../lang/pyret-lib/file.arr' as file
     file.file"
-   (p:p-fun _ _ _))
+   (? p:p-fun? _))
   ;; two nested directories deep, the string "inner" is provided
   (check-pyret
    "import 'modules/nested-dir.arr' as result
@@ -360,12 +409,13 @@
 (define built-in-libraries (test-suite "built-in-libraries"
 
   (check-pyret-match "list.is-empty([]) and list.List([])"
-                          (p:p-bool _ _ _ #t))
+                          (? p:pyret-true? _))
 
+  (check-pyret-match/check "pyret/list-tests.arr" _ 3 3 0 0 0)
 
   (check-pyret-match
     "prim-keys({x : 5})"
-    (p:p-object _ _ _))
+    (? p:p-object? _))
 
   (check-pyret
     "[5].first"
@@ -387,6 +437,7 @@
     "list.is-empty([5])"
     (p:mk-bool #f))
 
+
   (check-pyret
      "option.is-some(option.some(2))"
      (p:mk-bool #t))
@@ -401,20 +452,20 @@
 
   (check-pyret
     "
-    fun map(l, f):
+    fun ourmap(l, f):
       case:
         | list.is-empty(l) => []
-        | else => map(l.rest, f).push(f(l.first))
+        | true => ourmap(l.rest, f).push(f(l.first))
       end
     end
-    l1 = map([5], fun(x): x._add(1) end).first
-    l2 = map([5,6,7], fun(x): x._add(1) end).rest.rest.first
+    l1 = ourmap([5], fun(x): x._add(1) end).first
+    l2 = ourmap([5,6,7], fun(x): x._add(1) end).rest.rest.first
     l1._add(l2)" (p:mk-num 14))
 
   (check-pyret "import Racket as R
                 R('racket')('+',2, 3)" five)
   (check-pyret-match "import Racket as R
-                      R('racket')('string-append','four', 'ty', 'two')" (p:p-str _ _ _ "fourtytwo"))
+                      R('racket')('string-append','four', 'ty', 'two')" (p:p-str _ _ _ _ "fourtytwo"))
   (check-pyret-exn "import Racket as R
                     R('racket')('map',4,5)" "map")
   (check-pyret "import Racket as R
@@ -435,7 +486,7 @@
       map(self, f):
         case:
           | self.is-empty() => mklist([])
-          | else => self.rest().map(f).push(f(l.first()))
+          | true => self.rest().map(f).push(f(l.first()))
         end
     }
   end
@@ -453,7 +504,7 @@
 
   (check-pyret-match
     "list.empty"
-    (p:p-object _ _ _))
+    (? p:p-object? _))
 
   (check-pyret
    "builtins.keys({x:5}).first"
@@ -525,17 +576,17 @@
   (check-pyret "prim-num-keys({x:5}.{y:6})" (p:mk-num 2))
   (check-pyret "prim-num-keys({x:5}.{x:6})" (p:mk-num 1))
   (check-pyret "prim-num-keys({x:5, y:6, z:7})" (p:mk-num 3))
-  (check-pyret "prim-num-keys({x(): end, y:'', z: fun: end})" (p:mk-num 3))
+  (check-pyret "prim-num-keys({x(self): end, y:'', z: fun: end})" (p:mk-num 3))
 
 
 ))
 
 (define tag-tests (test-suite "tag-tests"
   (check-pyret "Function(fun: nothing end)" true)
-  (check-pyret "Function(method(): nothing end)" false)
+  (check-pyret "Function(method(self): nothing end)" false)
   (check-pyret "Method(fun: nothing end)" false)
-  (check-pyret "Method(method(): nothing end)" true)
-  (check-pyret "Object(method(): nothing end)" false)
+  (check-pyret "Method(method(self): nothing end)" true)
+  (check-pyret "Object(method(self): nothing end)" false)
   (check-pyret "Object({})" true)
   (check-pyret "String('')" true)
   (check-pyret "String(5)" false)
@@ -549,7 +600,7 @@
   (check-pyret "String('str'.{ x: 'some-new-field' })" true)
   (check-pyret "Bool(true.{ x: 'some-new-field' })" true)
   (check-pyret "Function(fun: nothing end.{ x: 'some-new-field' })" true)
-  (check-pyret "Method(method(): nothing end.{ x: 'some-new-field' })" true)
+  (check-pyret "Method(method(self): nothing end.{ x: 'some-new-field' })" true)
   (check-pyret "Object({}.{ x: 'some-new-field' })" true)
 ))
 
@@ -562,6 +613,8 @@
   (check-pyret "tostring({a: true})" (p:mk-str "{ a: true }"))
   (check-pyret "tostring({a: 5, tostring(self): 'hello!' end})"
          (p:mk-str "hello!"))
+  (check-pyret "tostring(fun(x): x end)" (p:mk-str "fun (x): '' end"))
+  (check-pyret "tostring(method(x): doc: 'yay' x end)" (p:mk-str "method (x): 'yay' end"))
 ))
 
 (define methods (test-suite "methods"
@@ -602,6 +655,25 @@ o2.m().called" true)
   (check-pyret "method(self): doc: 'hello' 1 end._fun()._doc" (p:mk-str "hello"))
   (check-pyret "fun(self): doc: 'hello' 1 end._method()._doc" (p:mk-str "hello"))
 
+  ;; tostring on methods
+  (check-pyret-match "(method (x): x end).tostring()"
+             (p:p-str _ _ _ _ "method (x): '' end"))
+
+  (check-pyret-match "(method (x): doc: 'cool' x end).tostring()"
+             (p:p-str _ _ _ _ "method (x): 'cool' end"))
+  
+  (check-pyret-match "o = {foo(x): x end} o:foo.tostring()"
+               (p:p-str _ _ _ _ "method foo(x): '' end"))
+
+  (check-pyret-match "o = {foo(x): doc: 'cool' x end} o:foo.tostring()"
+               (p:p-str _ _ _ _ "method foo(x): 'cool' end"))
+
+
+  ;; when curried, tostring() should still be the same
+  (check-pyret-match "o = {foo(x): doc: 'cool' x end} o.foo.tostring()"
+               (p:p-str _ _ _ _ "method foo(x): 'cool' end"))
+
+  
 ))
 
 (define exceptions (test-suite "exceptions"
@@ -682,6 +754,7 @@ o2.m().called" true)
   x = 5
   fun f(x):
     var x = x
+    x
   end
   "
   CONFLICT-MESSAGE)
@@ -698,7 +771,7 @@ o2.m().called" true)
 
   (check-pyret-exn "
   var should_notice_method_bodies = 5
-  o = { meth(self): should_notice_method_bodies = 3 end }
+  o = { meth(self): should_notice_method_bodies = 3 nothing end }
   "
   CONFLICT-MESSAGE)
 
@@ -800,7 +873,7 @@ o2.m().called" true)
   (check-pyret-exn "5 + 'foo'" "Bad args to prim")
   (check-pyret "x = {_lessequal(s,o): 3 end} x <= 5" (p:mk-num 3))
   (check-pyret-exn "x = {_lessthan: fun(s,o): 3 end} x < 5" "Arity")
-  (check-pyret-exn "x = {_greaterthan: 3} x > 5" "expected function")
+  (check-pyret-exn "x = {_greaterthan: 3} x > 5" "expected method")
   (check-pyret-exn "x = {} x <= 5" "lessequal was not found")
   (check-pyret "a = 1 b = 2 (a == b) or (true)" (p:mk-bool #t))
   (check-pyret "true and false" (p:mk-bool #f))
@@ -836,6 +909,7 @@ o2.m().called" true)
     (check-pyret-match/check "pyret/check/check-error3.arr" _ 4 3 1 0 1)
     (check-pyret-match/check "pyret/check/check-error4.arr" _ 2 1 1 0 0)
     (check-pyret-match/check "pyret/check/check-in-pred-ann.arr" _ 1 1 0 0 0)
+    (check-pyret-match/check "pyret/check/check-identifier-after.arr" _ 1 1 0 0 0)
     (check-pyret-match/check "pyret/check/nested-called-twice.arr" _ 2 2 0 0 0)
 
     (check-pyret-match/check "pyret/check/check-data1.arr" _ 1 1 0 0 0)
@@ -880,6 +954,7 @@ o2.m().called" true)
     ))
 
 
+    
 (define all (test-suite "all"
   constants
   functions

@@ -11,18 +11,19 @@
 (define (apply-racket-fun package-name package-member args)
   (define package (string->symbol package-name))
   (define fun (dynamic-require package (string->symbol package-member)))
-  (define result (apply fun (map get-val args)))
-  (wrap-racket-value result))
+  (define result (apply fun args))
+  result)
 
 ;; mk-racket-fun : String -> Value
 (define (mk-racket-fun f)
-  (p:mk-fun-nodoc
-    (λ args
-      (match (cons f (first args))
-        [(cons (p:p-str _ _ _ f) (p:p-str _ _ _ s))
-         (p:wrap (apply-racket-fun f s (map p:unwrap (rest args))))]
-        [else
-         (error (format "Racket: expected string as first argument, got ~a" (first args)))]))))
+  (define (call . args)
+    (match (cons f (first args))
+      [(cons (p:p-str _ _ _ _ f) (p:p-str _ _ _ _ s))
+       (ffi-wrap (apply-racket-fun f s (map ffi-unwrap (rest args))))]
+      [else
+       (error (format "Racket: expected string as first argument, got ~a" (first args)))]))
+  (p:mk-fun-nodoc-slow call))
 
-(define Racket (p:mk-fun mk-racket-fun "Racket ffi"))
+(define Racket (p:pλ (arg) "Racket ffi"
+  (mk-racket-fun arg)))
 

@@ -62,7 +62,7 @@
 (defconst pyret-keywords-regex 
   (regexp-opt
    '("fun" "method" "var" "when" "import" "provide"
-     "data" "end" "except" "for" "from"
+     "data" "end" "except" "for" "from" "cases"
      "and" "or" "not"
      "as" "purpose" "if" "else")))
 (defconst pyret-keywords-colon-regex
@@ -81,12 +81,12 @@
        "\\)\\(:\\)") 
      (1 font-lock-builtin-face) (2 font-lock-keyword-face) (3 font-lock-builtin-face))
    `(,(concat 
-       "\\(^\\|[ \t]\\|" pyret-keywords-regex "\\)\\("
+       "\\(^\\|[ \t]\\|" pyret-punctuation-regex "\\)\\("
        pyret-keywords-regex "-" pyret-ident-regex
        "\\)[ \t]*\\((\\)")
      (1 font-lock-builtin-face) (2 font-lock-function-name-face) (3 font-lock-builtin-face))
    `(,(concat 
-       "\\(^\\|[ \t]\\|" pyret-keywords-regex "\\)\\("
+       "\\(^\\|[ \t]\\|" pyret-punctuation-regex "\\)\\("
        pyret-keywords-regex "-" pyret-ident-regex
        "\\)")
      (1 font-lock-builtin-face) (2 font-lock-variable-name-face))
@@ -178,8 +178,7 @@
         (= c ?-))))
 
 (defsubst pyret-in-string ()
-  (and (get-text-property (point) 'fontified)
-       (equal (get-text-property (point) 'face) 'font-lock-string-face)))
+  (equal (get-text-property (point) 'face) 'font-lock-string-face))
 (defsubst pyret-keyword (s) 
   (if (or (pyret-is-word (preceding-char))
           (pyret-in-string)) nil
@@ -202,22 +201,24 @@
 (defsubst pyret-FUN () (pyret-keyword "fun"))
 (defsubst pyret-METHOD () (pyret-keyword "method"))
 (defsubst pyret-VAR () (pyret-keyword "var"))
-(defsubst pyret-CASES () (pyret-keyword "case"))
+(defsubst pyret-CASE () (pyret-keyword "case:"))
+(defsubst pyret-CASES () (pyret-keyword "cases"))
 (defsubst pyret-WHEN () (pyret-keyword "when"))
 (defsubst pyret-IF () (pyret-keyword "if"))
-(defsubst pyret-ELSE () (pyret-keyword "else"))
+(defsubst pyret-ELSEIF () (pyret-keyword "else if"))
+(defsubst pyret-ELSE () (pyret-keyword "else:"))
 (defsubst pyret-IMPORT () (pyret-keyword "import"))
 (defsubst pyret-PROVIDE () (pyret-keyword "provide"))
 (defsubst pyret-DATA () (pyret-keyword "data"))
 (defsubst pyret-END () (pyret-keyword "end"))
 (defsubst pyret-FOR () (pyret-keyword "for"))
 (defsubst pyret-FROM () (pyret-keyword "from"))
-(defsubst pyret-TRY () (pyret-keyword "try"))
+(defsubst pyret-TRY () (pyret-keyword "try:"))
 (defsubst pyret-EXCEPT () (pyret-keyword "except"))
 (defsubst pyret-AS () (pyret-keyword "as"))
-(defsubst pyret-SHARING () (pyret-keyword "sharing"))
-(defsubst pyret-CHECK () (pyret-keyword "check"))
-(defsubst pyret-WITH () (pyret-keyword "with"))
+(defsubst pyret-SHARING () (pyret-keyword "sharing:"))
+(defsubst pyret-CHECK () (pyret-keyword "check:"))
+(defsubst pyret-WITH () (pyret-keyword "with:"))
 (defsubst pyret-PIPE () (pyret-char ?|))
 (defsubst pyret-COLON () (pyret-char ?:))
 (defsubst pyret-COMMA () (pyret-char ?,))
@@ -313,6 +314,7 @@
   "Stores the indentation information of the parse.  Should only be buffer-local.")
 
 (defun pyret-compute-nestings (char-min char-max)
+  (save-excursion (font-lock-fontify-region (max 1 char-min) char-max))
   (let ((nlen (if pyret-nestings-at-line-start (length pyret-nestings-at-line-start) 0))
         (doclen (count-lines (point-min) (point-max))))
     (cond 
@@ -386,8 +388,6 @@
              ((or (pyret-has-top opens '(wantcolon))
                   (pyret-has-top opens '(wantcolonorequal)))
               (pop opens))
-             ((pyret-has-top opens '(wantcolonorif))
-              (pop opens))
              ((or (pyret-has-top opens '(object))
                   (pyret-has-top opens '(shared)))
                   ;;(pyret-has-top opens '(data)))
@@ -456,11 +456,19 @@
             (push 'wantcolon opens)
             (forward-char 3))
            ((looking-at "[ \t]+") (goto-char (match-end 0)))
-           ((pyret-CASES)
+           ((pyret-CASE)
             (incf (pyret-indent-cases defered-opened))
             (push 'cases opens)
             (push 'wantcolon opens)
             (forward-char 4))
+           ((pyret-CASES)
+            (incf (pyret-indent-cases defered-opened))
+            (push 'cases opens)
+            (push 'wantcolon opens)
+            (push 'needsomething opens)
+            (push 'wantcloseparen opens)
+            (push 'wantopenparen opens)
+            (forward-char 5))
            ((pyret-DATA)
             (incf (pyret-indent-data defered-opened))
             (push 'data opens)
@@ -468,18 +476,29 @@
             (push 'needsomething opens)
             (forward-char 4))
            ((pyret-IF)
-            (if (pyret-has-top opens '(wantcolonorif))
-                (pop opens)
-              (incf (pyret-indent-fun defered-opened)))
+            (incf (pyret-indent-fun defered-opened))
             (push 'if opens)
             (push 'wantcolon opens)
             (push 'needsomething opens)
             (forward-char 2))
+           ((pyret-ELSEIF)
+            (when (pyret-has-top opens '(if))
+              (cond
+               ((> (pyret-indent-fun cur-opened) 0) (decf (pyret-indent-fun cur-opened)))
+               ((> (pyret-indent-fun defered-opened) 0) (decf (pyret-indent-fun defered-opened)))
+               (t (incf (pyret-indent-fun cur-closed))))
+              (incf (pyret-indent-fun defered-opened))
+              (push 'wantcolon opens)
+              (push 'needsomething opens))
+            (forward-char 7))
            ((pyret-ELSE)
             (when (pyret-has-top opens '(if))
-              (incf (pyret-indent-fun cur-closed))
+              (cond
+               ((> (pyret-indent-fun cur-opened) 0) (decf (pyret-indent-fun cur-opened)))
+               ((> (pyret-indent-fun defered-opened) 0) (decf (pyret-indent-fun defered-opened)))
+               (t (incf (pyret-indent-fun cur-closed))))
               (incf (pyret-indent-fun defered-opened))
-              (push 'wantcolonorif opens))
+              (push 'wantcolon opens))
             (forward-char 4))
            ((pyret-PIPE)
             (cond 
@@ -517,9 +536,9 @@
               (push 'object opens)
               (push 'wantcolon opens)))
             (forward-char 4))
-           ((pyret-PROVIDE)
-            (push 'provide opens)
-            (forward-char 7))
+           ;; ((pyret-PROVIDE)
+           ;;  (push 'provide opens)
+           ;;  (forward-char 7))
            ((pyret-SHARING)
             (incf (pyret-indent-data cur-closed))
             (incf (pyret-indent-shared defered-opened))
@@ -641,7 +660,10 @@
               (push 'wantcloseparen opens)))
             (forward-char))
            ((pyret-RPAREN)
-            (incf (pyret-indent-parens defered-closed))
+            (cond
+             ((> (pyret-indent-parens cur-opened) 0) (decf (pyret-indent-parens cur-opened)))
+             ((> (pyret-indent-parens defered-opened) 0) (decf (pyret-indent-parens defered-opened)))
+             (t (incf (pyret-indent-parens defered-closed))))
             (if (pyret-has-top opens '(wantcloseparen))
                 (pop opens))
             (while (pyret-has-top opens '(var))
@@ -765,7 +787,7 @@
 (defun pyret-indent-line ()
   "Indent current line as Pyret code"
   (interactive)
-  (pyret-compute-nestings (min (point) pyret-nestings-dirty-at-char) (point))
+  (pyret-compute-nestings (min (point) pyret-nestings-dirty-at-char) (save-excursion (end-of-line) (point)))
   (let* ((indents (aref pyret-nestings-at-line-start (min (- (line-number-at-pos) 1) (length pyret-nestings-at-line-start))))
          (total-indent (pyret-sum-indents (pyret-mul-indent indents pyret-indent-widths))))
     (save-excursion
@@ -782,9 +804,10 @@
 (defun pyret-indent-region (start end)
   "Indent current region as Pyret code"
   (interactive)
-  (pyret-compute-nestings (min start pyret-nestings-dirty-at-char) end)
+  (pyret-compute-nestings (min start pyret-nestings-dirty-at-char) (save-excursion (goto-char end) (end-of-line) (point)))
   (let* ((line-min (line-number-at-pos start))
          (line-max (line-number-at-pos end))
+         (indent-widths (make-vector (+ 1 (- line-max line-min)) 0))
          (n line-min))
     (save-excursion
       (goto-char start) (beginning-of-line)
@@ -792,12 +815,16 @@
         (let* ((indents (aref pyret-nestings-at-line-start (min (- n 1) (length pyret-nestings-at-line-start))))
                (total-indent (pyret-sum-indents (pyret-mul-indent indents pyret-indent-widths))))
           (if (looking-at "^[ \t]*[|]")
-              (if (> total-indent 0)
-                  (indent-line-to (* tab-width (- total-indent 1)))
-                (indent-line-to 0))
-            (indent-line-to (max 0 (* tab-width total-indent)))))
+              (aset indent-widths (- n line-min) (max 0 (* tab-width (- total-indent 1))))
+            (aset indent-widths (- n line-min) (max 0 (* tab-width total-indent)))))
         (incf n)
-        (forward-line)))
+        (forward-line))
+      (setq n line-min) (goto-char start) (beginning-of-line)
+      (while (<= n line-max)
+        (indent-line-to (aref indent-widths (- n line-min)))
+        (incf n)
+        (forward-line))
+      )
     (if (< (current-column) (current-indentation))
         (forward-char (- (current-indentation) (current-column))))
     ))
@@ -839,6 +866,18 @@ For detail, see `comment-dwim'."
                nil t)
   (run-hooks 'pyret-mode-hook))
 
+
+(defun pyret-reload-mode-all-buffers ()
+  "Debugging function to help reload the pyret major mode in all open buffers"
+  (interactive)
+  (mapcar
+   (function
+    (lambda (b)
+      (with-current-buffer b
+        (when (equal major-mode 'pyret-mode)
+          (text-mode)
+          (pyret-mode)))))
+   (buffer-list)))
 
 
 (provide 'pyret)

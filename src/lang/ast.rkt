@@ -23,7 +23,6 @@ these metadata purposes.
     [else (error (format "Non-symbol, non-string, non-path value for
                           source: ~a" e))]))
 
-
 ;; s-prog : srcloc (Listof Header) s-block -> s-prog
 (struct s-prog (syntax imports block) #:transparent)
 
@@ -55,7 +54,7 @@ these metadata purposes.
 ;; s-bind : srcloc Symbol Ann -> s-bind
 (struct s-bind (syntax id ann) #:transparent)
 
-;; A Stmt is a (U s-fun s-var s-case s-try s-data s-import Expr)
+;; A Stmt is a (U s-fun s-var s-if s-try s-data s-import Expr)
 
 ;; s-fun : srcloc Symbol (Listof Symbol) (Listof s-bind) Ann String s-block s-block
 (struct s-fun (syntax name params args ann doc body check) #:transparent)
@@ -64,14 +63,27 @@ these metadata purposes.
 (struct s-var (syntax name value) #:transparent)
 ;; s-let : srcloc bind Expr -> s-let
 (struct s-let (syntax name value) #:transparent)
-;; s-when : srcloc (Listof Expr s-block) -> s-case
+;; s-when : srcloc (Listof Expr s-block) -> s-when
 (struct s-when (syntax test block) #:transparent)
-;; s-case : srcloc (Listof s-case-branch) -> s-case
+;; s-case : srcloc (Listof s-if-branch) -> s-if
 (struct s-case (syntax branches) #:transparent)
-;; s-case-branch : srcloc Expr s-block -> s-case-branch
+;; s-if-branch : srcloc Expr s-block -> s-if-branch
 (struct s-case-branch (syntax expr body) #:transparent)
+;; s-if : srcloc (Listof s-if-branch) -> s-if
+(struct s-if (syntax branches) #:transparent)
+;; s-if-else : srcloc (Listof s-if-branch) s-block -> s-if-else
+(struct s-if-else (syntax branches else) #:transparent)
+;; s-if-branch : srcloc Expr s-block -> s-if-branch
+(struct s-if-branch (syntax expr body) #:transparent)
 ;; s-try : srcloc Expr s-bind Expr -> s-try
 (struct s-try (syntax body id except) #:transparent)
+
+;; s-cases : srcloc Expr Expr (Listof s-cases-branch) -> s-cases
+(struct s-cases (syntax type val branches) #:transparent)
+;; s-cases-else : srcloc (Listof s-cases-branch) s-block -> s-cases-else
+(struct s-cases-else (syntax type val branches else) #:transparent)
+;; s-cases-branch : srcloc symbol (ListOf s-bind) s-block -> s-cases-branch
+(struct s-cases-branch (syntax name args body) #:transparent)
 
 (define op+ 'op+)
 (define op- 'op-)
@@ -101,6 +113,10 @@ these metadata purposes.
      ("and" . ,opand)
      ("or" . ,opor))))
 
+(define reverse-op-lookup-table
+  (make-immutable-hash
+   (map (λ (k) (cons (hash-ref op-lookup-table k) k))
+        (hash-keys op-lookup-table))))
 
 ;; s-op: srcloc op Expr Expr -> s-op
 (struct s-op (syntax op left right) #:transparent)
@@ -195,8 +211,8 @@ these metadata purposes.
 (struct a-field a-ann (syntax name ann) #:transparent)
 ;; a-record : srcloc (Listof a-field)
 (struct a-record a-ann (syntax fields) #:transparent)
-;; a-app : srcloc Symbol (Listof a-ann)
-(struct a-app a-ann (syntax name parameters) #:transparent)
+;; a-app : srcloc (Symbol or a-dot) (Listof a-ann)
+(struct a-app a-ann (syntax ann parameters) #:transparent)
 ;; a-pred : srcloc a-ann Expr
 (struct a-pred a-ann (syntax ann exp) #:transparent)
 ;; a-dot : srcloc Symbol Symbol

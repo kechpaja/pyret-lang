@@ -28,7 +28,8 @@
          "fun" "method" "doc:"
          "check:"
          "try:" "except"
-         "case:" "when"
+         "cases"
+         "case:" "when" "if" "else if" "else:"
          "data" "with:" "sharing:"
          "for" "from"
          "end"))
@@ -52,11 +53,15 @@
 ;; should turn into actual escape characters in the resulting strings.
 ;; This is a mediocre solution, but I'm not sure of a better way.
 (define (fix-escapes s)
-  (string-replace 
+  (string-replace
    (string-replace
-    (string-replace s "\\n" "\n")
-    "\\t" "\t")
-   "\\r" "\r"))
+    (string-replace 
+     (string-replace
+      (string-replace s "\\n" "\n")
+      "\\t" "\t")
+     "\\r" "\r")
+    "\\\"" "\"")
+   "\\'" "'"))
 
 (define (tokenize ip)
   (port-count-lines! ip)
@@ -137,16 +142,12 @@
       ;; strings
       [(concatenation
         "\""
-        (repetition 0 +inf.0 (union "\\\"" (intersection
-                                            (char-complement #\")
-                                            (char-complement #\newline))))
+        (repetition 0 +inf.0 (union "\\\"" (char-complement #\")))
         "\"")
        (token STRING (fix-escapes lexeme))]
       [(concatenation
         "'"
-        (repetition 0 +inf.0 (union "\\'" (intersection
-                                           (char-complement #\')
-                                           (char-complement #\newline))))
+        (repetition 0 +inf.0 (union "\\'" (char-complement #\')))
         "'")
        (token STRING (fix-escapes lexeme))]
       ;; brackets

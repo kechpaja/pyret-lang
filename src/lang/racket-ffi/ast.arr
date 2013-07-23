@@ -38,6 +38,10 @@ data Expr:
   | s_when(l :: Loc, test :: Expr, block :: Expr)
   | s_assign(l :: Loc, id :: String, value :: Expr)
   | s_case(l :: Loc, branches :: List<CaseBranch>)
+  | s_if(l :: Loc, branches :: List<IfBranch>)
+  | s_if_else(l :: Loc, branches :: List<IfBranch>, _else :: Expr)
+  | s_cases(l :: Loc, type :: Expr, val :: Expr, branches :: List<CasesBranch>)
+  | s_cases_else(l :: Loc, type :: Expr, val :: Expr, branches :: List<CasesBranch>, _else :: Expr)
   | s_try(l :: Loc, body :: Expr, id :: Bind, _except :: Expr)
   | s_op(l :: Loc, op :: String, left :: Expr, right :: Expr)
   | s_not(l :: Loc, expr :: Expr)
@@ -128,6 +132,14 @@ data CaseBranch:
   | s_case_branch(l :: Loc, expr :: Expr, body :: Expr)
 end
 
+data IfBranch:
+  | s_if_branch(l :: Loc, test :: Expr, body :: Expr)
+end
+
+data CasesBranch:
+  | s_cases_branch(l :: Loc, name :: String, args :: List<Bind>, body :: Expr)
+end
+
 data Ann:
   | a_blank
   | a_any
@@ -135,7 +147,7 @@ data Ann:
   | a_arrow(l :: Loc, args :: List<Ann>, ret :: Ann)
   | a_method(l :: Loc, args :: List<Ann>, ret :: Ann)
   | a_record(l :: Loc, fields :: List<AField>)
-  | a_app(l :: Loc, name :: String, args :: List<Ann>)
+  | a_app(l :: Loc, ann :: Ann, args :: List<Ann>)
   | a_pred(l :: Loc, ann :: Ann, exp :: Expr)
   | a_dot(l :: Loc, obj :: String, field :: String)
 end
