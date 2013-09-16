@@ -23,6 +23,7 @@
   "desugar.rkt"
   "desugar-check.rkt"
   "typecheck.rkt"
+  "../types/tc-shim.rkt" ;; NOTE(dbp 9/15/2013): for future typechecker written in Pyret
   "well-formed.rkt"
   "indentation.rkt"
   "compile.rkt"
@@ -45,11 +46,12 @@
                               (indentation-check well-formed-stx)
                               well-formed-stx))
   (define desugared (desugar indentation-stx))
-  (define type-checked
+  (define type-checked (tc desugared))
+  (define contracts-installed
     (if type-env
-        (contract-check-pyret desugared type-env)
-        desugared))
-  (define compiled (compile type-checked))
+        (contract-check-pyret type-checked type-env)
+        type-checked))
+  (define compiled (compile contracts-installed))
   (strip-context compiled))
 
 (define (pyret->racket
@@ -110,4 +112,3 @@
         [else
          (printf "~a\n" (p:to-string val))])]
      [_ (void)])))
-
