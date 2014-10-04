@@ -1,0 +1,1 @@
+("5.3.6" ("723efb60061b180f48556e19488c390c9e63c19c" . "5aab02690ea83309335ed0afe7ec179f56fa3eb4") #"/shared/SortCodedStuff/Programming/pyret-lang/src/whalesong/js-map-racket-impl.rkt" #"/shared/College/sem7/ta_cs173/pyret-lang/lib/whalesong/whalesong/lang/js/js.rkt" (collects #"syntax" #"parse" #"private" #"runtime-report.rkt") (collects #"s-exp" #"lang" #"reader.rkt"))

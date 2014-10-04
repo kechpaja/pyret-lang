@@ -1,0 +1,1 @@
+("5.3.6" ("3198fcc3ce1f1ce89cf240a9043ffe7e701f548b" . "d458a5dd17fb036bb92c66fd16f33c4eb8a6362b") #"/shared/SortCodedStuff/Programming/pyret-lang/src/lang/tokenizer.rkt" (collects #"parser-tools" #"lex.rkt") (collects #"racket" #"base.rkt") #"/shared/SortCodedStuff/Programming/pyret-lang/lib/ragg/ragg/support.rkt" (collects #"racket" #"base" #"lang" #"reader.rkt"))

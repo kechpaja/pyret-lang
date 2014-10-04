@@ -1,0 +1,1 @@
+("5.3.6" ("fcffd7fdfe4e56927a59e7cce281ad75c16a9b16" . "434ec12e87b70415f91657376ad004b8bdc67129") #"/shared/SortCodedStuff/Programming/pyret-lang/src/lang/pyret.rkt" (collects #"racket" #"base.rkt") (collects #"racket" #"base" #"lang" #"reader.rkt"))

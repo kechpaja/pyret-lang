@@ -1,0 +1,1 @@
+("5.3.6" ("6cca173e8db199921c8003037dff2cf9dc0c47e0" . "1c3690c9ec3c2aedb4377682907d7850afe26c2a") #"/shared/SortCodedStuff/Programming/pyret-lang/src/whalesong/lang/whalesong.rkt" (collects #"racket" #"base.rkt") (collects #"racket" #"base" #"lang" #"reader.rkt"))
