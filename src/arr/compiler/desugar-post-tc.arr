@@ -9,13 +9,28 @@ import "compiler/compile-structs.arr" as C
 mk-id = D.mk-id
 no-branches-exn = D.no-branches-exn
 
+fun no-cases-exn(l, val):
+  A.s-prim-app(l, "throwNoCasesMatched", [list: A.s-srcloc(l, l), val])
+end
+
 desugar-visitor = A.default-map-visitor.{
-  s-cases(self, l, typ, val, branches):
-    A.s-cases-else(l, typ.visit(self), val.visit(self), branches.map(_.visit(self)),
-      A.s-block(l, [list: no-branches-exn(l, "cases")]))
+  s-cases-else(self, l, typ, val, branches, els):
+    name = A.global-names.make-atom("cases")
+    typ-compiled = typ.visit(self)
+    val-exp = val.visit(self)
+    val-id = A.s-id(l, name)
+    A.s-let-expr(l, [list: A.s-let-bind(l, A.s-bind(l, false, name, typ-compiled), val-exp)],
+      A.s-cases-else(l, A.a-blank, val-id, branches.map(_.visit(self)),
+        els.visit(self)))
   end,
-  s-instantiate(self, l, body, args):
-    body.visit(self)
+  s-cases(self, l, typ, val, branches):
+    name = A.global-names.make-atom("cases")
+    typ-compiled = typ.visit(self)
+    val-exp = val.visit(self)
+    val-id = A.s-id(l, name)
+    A.s-let-expr(l, [list: A.s-let-bind(l, A.s-bind(l, false, name, typ-compiled), val-exp)],
+      A.s-cases-else(l, A.a-blank, val-id, branches.map(_.visit(self)),
+        A.s-block(l, [list: no-cases-exn(l, val-id)])))
   end,
   s-check(self, l, name, body, keyword-check):
     A.s-id(l, A.s-global("nothing"))

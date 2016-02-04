@@ -9,12 +9,17 @@ This section contains information on libraries that come with Pyret.
 
 @include-section["trove/lists.scrbl"]
 @include-section["trove/sets.scrbl"]
+@include-section["trove/arrays.scrbl"]
+@include-section["trove/string-dict.scrbl"]
 @include-section["trove/option.js.rkt"]
+@include-section["trove/pick.scrbl"]
 @include-section["trove/either.js.rkt"]
 
 @include-section["trove/image-structs.js.rkt"]
 @include-section["trove/image.js.rkt"]
 @include-section["trove/world.js.rkt"]
+@;@include-section["trove/plot.js.rkt"]
+@;@include-section["trove/graph.js.rkt"]
 
 @include-section["trove/srcloc.js.rkt"]
 @include-section["trove/pprint.js.rkt"]

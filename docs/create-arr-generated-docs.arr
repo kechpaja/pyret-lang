@@ -14,8 +14,8 @@ import "compiler/ast-util.arr" as U
 # import "compiler/ast-split.arr" as AS
 # import "compiler/js-of-pyret.arr" as JS
 # import "compiler/desugar-check.arr" as CH
-import file as F
 import string-dict as S
+import file as F
 import pprint as PP
 
 import "docs/doc-utils.arr" as DU
@@ -39,13 +39,14 @@ process-ann = DU.process-ann
 lookup-value = DU.lookup-value
 process-fields = DU.process-fields
 
-options = {
-  width: C.next-val-default(C.Number, 80, some("w"), C.once, "Pretty-printed width"),
-  dialect: C.next-val-default(C.String, "Pyret", some("d"), C.once, "Dialect to use")
-}
+options = [S.string-dict:
+  "width",
+    C.next-val-default(C.Number, 80, some("w"), C.once, "Pretty-printed width"),
+  "dialect",
+    C.next-val-default(C.String, "Pyret", some("d"), C.once, "Dialect to use")
+]
 
 parsed-options = C.parse-cmdline(options)
-
 
 fun find-result(expr):
   cases(A.Expr) expr:
@@ -54,14 +55,13 @@ fun find-result(expr):
     | s-let-expr(_, _, body) => find-result(body)
     | s-type-let-expr(_, _, body) => find-result(body)
     | s-letrec(_, _, body) => find-result(body)
-    | s-module(_, _, _, _, _) => expr
+    | s-module(_, _, _, _, _, _, _) => expr
     | else =>
       print("Got an expression we didn't expect:")
       print(torepr(expr))
       raise("Failure?")
   end
 end
-
 
 fun process-module(file, fields, types, bindings, type-bindings):
   split-fields = process-fields(trim-path(file), fields, types, bindings, type-bindings)
@@ -72,7 +72,7 @@ fun process-module(file, fields, types, bindings, type-bindings):
         sexp("method-spec",
           [list: spair("name", "\"" + PP.str(name).pretty(1000).first + "\""),
             spair("arity", tostring(args.length())),
-            spair("params", params.map(lam(p): leaf(torepr(p.toname())) end)),
+            spair("params", slist(params.map(lam(p): leaf(torepr(p.toname())) end))),
             spair("args", slist(args.map(lam(b): leaf(torepr(b.id.toname())) end))),
             spair("return", process-ann(ann)),
             spair("contract",
@@ -92,9 +92,9 @@ fun process-module(file, fields, types, bindings, type-bindings):
       | s-data-field(_, name, value) =>
         # print("***** Trying to lookup " + value.tosource().pretty(200).first)
         e = lookup-value(value, bindings)
-        cases(A.Expr) e: # Not guaranteed to be an Expr!
+        cases(Any) e: # Not guaranteed to be an Expr!
           | crossref(modname, as-name) =>
-            sexp("re-export", [list: 
+            sexp("re-export", [list:
                 spair("name", torepr(name)),
                 sexp("cross-ref", [list: leaf(torepr(modname)), leaf(torepr(as-name))])
               ])
@@ -112,7 +112,7 @@ fun process-module(file, fields, types, bindings, type-bindings):
           | s-id(_, id) =>
             spair("unknown-item", spair("name", torepr(name)))
           | s-variant(_, _, variant-name, members, with-members) =>
-            data-name = split-fields.constructors.get(variant-name)
+            data-name = split-fields.constructors.get-value(variant-name)
             fun member-type-str(m):
               cases(A.VariantMemberType) m.member-type:
                 | s-normal => "normal"
@@ -130,7 +130,7 @@ fun process-module(file, fields, types, bindings, type-bindings):
                       end))),
                 spair("with-members", slist(with-members.map(method-spec(data-name, _)))) ])
           | s-singleton-variant(_,  variant-name, with-members) =>
-            data-name = split-fields.constructors.get(variant-name)
+            data-name = split-fields.constructors.get-value(variant-name)
             sexp("singleton-spec",
               [list: spair("name", torepr(variant-name)),
                 spair("with-members", slist(with-members.map(method-spec(data-name, _)))) ])
@@ -154,14 +154,14 @@ end
 
 cases (C.ParsedArguments) parsed-options:
   | success(opts, rest) =>
-    print-width = opts.get("width")
-    dialect = opts.get("dialect")
+    print-width = opts.get-value("width")
+    dialect = opts.get-value("dialect")
     cases (List) rest:
       | empty => print("Require a file name")
       | link(file, more) =>
         file-contents = F.file-to-string(file)
-        parsed = P.parse-dialect(dialect, file-contents, file)
-        scoped = R.desugar-scope(DC.desugar-no-checks(U.append-nothing-if-necessary(parsed).or-else(parsed)), CS.minimal-builtins)
+        parsed = P.surface-parse(file-contents, file)
+        scoped = R.desugar-scope(DC.desugar-no-checks(U.append-nothing-if-necessary(parsed).or-else(parsed)), CS.standard-builtins)
         named-and-bound = R.resolve-names(scoped, CS.minimal-builtins)
         named = named-and-bound.ast
         bindings = named-and-bound.bindings
@@ -169,7 +169,7 @@ cases (C.ParsedArguments) parsed-options:
         body = named.block
         result = find-result(body)
         cases(A.Expr) result:
-          | s-module(_, _, provides, provides-types, _) =>
+          | s-module(_, _, _, _, provides, provides-types, _) =>
             cases(A.Expr) provides:
               | s-obj(_, fields) =>
                 output = toplevel(

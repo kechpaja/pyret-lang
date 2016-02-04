@@ -6,20 +6,19 @@ import srcloc as SL
 import ast as A
 import parse-pyret as PP
 import "compiler/compile-structs.arr" as CS
+import "compiler/ast-anf.arr" as N
 import string-dict as SD
 import either as E
 
 type Loc = SL.Srcloc
 
-
 fun ok-last(stmt):
   not(
     A.is-s-let(stmt) or
     A.is-s-var(stmt) or
+    A.is-s-rec(stmt) or
     A.is-s-fun(stmt) or
     A.is-s-data(stmt) or
-    A.is-s-graph(stmt) or
-    A.is-s-m-graph(stmt) or
     A.is-s-contract(stmt) or
     A.is-s-check(stmt) or
     A.is-s-type(stmt) or
@@ -42,7 +41,7 @@ fun append-nothing-if-necessary(prog :: A.Program) -> Option<A.Program>:
               if ok-last(last-stmt): none
               else:
                 some(A.s-program(l1, _provide, _provide-types, imports,
-                    A.s-block(l2, stmts + [list: A.s-id(l2, A.s-name(l2, "nothing"))])))
+                    A.s-block(l2, stmts + [list: A.s-id(A.dummy-loc, A.s-name(l2, "nothing"))])))
               end
           end
         | else => none
@@ -95,6 +94,7 @@ data BindingInfo:
   | b-exp(exp :: A.Expr) # This name is bound to some expression that we can't interpret yet
   | b-dot(base :: BindingInfo, name :: String) # A field lookup off some binding that isn't a b-dict
   | b-typ # A type
+  | b-import(imp :: A.ImportType) # imported from a module
   | b-unknown # Any unknown value
 end
 
@@ -110,7 +110,7 @@ fun bind-exp(e :: A.Expr, env) -> Option<Binding>:
           b = eb.info
           cases(BindingInfo) b:
             | b-dict(dict) =>
-              if dict.has-key(name.key()): some(e-bind(A.dummy-loc, false, dict.get(name.key())))
+              if dict.has-key(name.key()): some(e-bind(A.dummy-loc, false, dict.get-value(name.key())))
               else: some(e-bind(A.dummy-loc, false, b-dot(b, name)))
               end
             | else => some(e-bind(A.dummy-loc, false, b-dot(b, name)))
@@ -118,15 +118,15 @@ fun bind-exp(e :: A.Expr, env) -> Option<Binding>:
         | none => none
       end
     | s-id(_, name) =>
-      if env.has-key(name.key()): some(env.get(name.key()))
+      if env.has-key(name.key()): some(env.get-value(name.key()))
       else: none
       end
     | s-id-var(_, name) =>
-      if env.has-key(name.key()): some(env.get(name.key()))
+      if env.has-key(name.key()): some(env.get-value(name.key()))
       else: none
       end
     | s-id-letrec(_, name, _) =>
-      if env.has-key(name.key()): some(env.get(name.key()))
+      if env.has-key(name.key()): some(env.get-value(name.key()))
       else: none
       end
     | else => some(e-bind(A.dummy-loc, false, b-exp(e)))
@@ -145,32 +145,18 @@ fun bind-or-unknown(e :: A.Expr, env) -> BindingInfo:
   end
 end
 
-fun binding-type-env-from-env(initial-env):
-  for lists.fold(acc from SD.immutable-string-dict(), binding from initial-env.types):
-    cases(CS.CompileTypeBinding) binding:
-      | type-module-bindings(name, ids) =>
-        mod = for lists.fold(m from SD.immutable-string-dict(), b from ids):
-          m.set(A.s-name(A.dummy-loc, b).key(), e-bind(A.dummy-loc, false, b-typ))
-        end
-        acc.set(A.s-name(A.dummy-loc, name).key(), e-bind(A.dummy-loc, false, b-dict(mod)))
-      | type-id(name) => acc.set(A.s-type-global(name).key(), e-bind(A.dummy-loc, false, b-typ))
-    end
+fun binding-type-env-from-env(env):
+  for lists.fold(acc from SD.make-string-dict(), name from env.globals.types.keys-list()):
+    acc.set(A.s-type-global(name).key(), e-bind(A.dummy-loc, false, b-typ))
   end
 end
-fun binding-env-from-env(initial-env):
-  for lists.fold(acc from SD.immutable-string-dict(), binding from initial-env.bindings):
-    cases(CS.CompileBinding) binding:
-      | module-bindings(name, ids) =>
-        mod = for lists.fold(m from SD.immutable-string-dict(), b from ids):
-          m.set(A.s-name(A.dummy-loc, b).key(), e-bind(A.dummy-loc, false, b-prim(name + ":" + b)))
-        end
-        acc.set(A.s-name(A.dummy-loc, name).key(), e-bind(A.dummy-loc, false, b-dict(mod)))
-      | builtin-id(name) => acc.set(A.s-global(name).key(), e-bind(A.dummy-loc, false, b-prim(name)))
-    end
+fun binding-env-from-env(env):
+  for lists.fold(acc from SD.make-string-dict(), name from env.globals.values.keys-list()):
+    acc.set(A.s-global(name).key(), e-bind(A.dummy-loc, false, b-prim(name)))
   end
 end
 
-fun <a, c> default-env-map-visitor(
+fun default-env-map-visitor<a, c>(
     initial-env :: a,
     initial-type-env :: c,
     bind-handlers :: {
@@ -207,7 +193,7 @@ fun <a, c> default-env-map-visitor(
         new-bind = b.visit(visit-envs)
         updated.{ bs: link(new-bind, acc.bs) }
       end
-      A.s-type-let-expr(l, bound-env.bs, body.visit(self.{ env: bound-env.val-env, type-env: bound-env.type-env }))
+      A.s-type-let-expr(l, bound-env.bs.reverse(), body.visit(self.{ env: bound-env.val-env, type-env: bound-env.type-env }))
     end,
     s-let-expr(self, l, binds, body):
       bound-env = for fold(acc from { e: self.env, bs : [list: ] }, b from binds):
@@ -284,7 +270,7 @@ fun <a, c> default-env-map-visitor(
 end
 
 
-fun <a, c> default-env-iter-visitor(
+fun default-env-iter-visitor<a, c>(
     initial-env :: a,
     initial-type-env :: c,
     bind-handlers :: {
@@ -407,9 +393,17 @@ end
 
 binding-handlers = {
   s-header(_, imp, env, type-env):
+    with-vname = env.set(imp.vals-name.key(), e-bind(imp.l, false, b-unknown))
+    with-tname = type-env.set(imp.types-name.key(), e-bind(imp.l, false, b-typ))
+    with-vnames = for fold(venv from with-vname, v from imp.values):
+      venv.set(v.key(), e-bind(imp.l, false, b-import(imp.import-type)))
+    end
+    with-tnames = for fold(tenv from with-tname, t from imp.types):
+      tenv.set(t.key(), e-bind(imp.l, false, b-import(imp.import-type)))
+    end
     {
-      val-env: env.set(imp.name.key(), e-bind(imp.l, false, b-unknown)),
-      type-env: type-env.set(imp.types.key(), e-bind(imp.l, false, b-typ))
+      val-env: with-vnames,
+      type-env: with-tnames
     }
   end,
   s-param-bind(_, l, param, type-env):
@@ -526,15 +520,22 @@ inline-lams = A.default-map-visitor.{
   s-app(self, loc, f, exps):
     cases(A.Expr) f:
       | s-lam(l, _, args, ann, _, body, _) =>
-        a = A.global-names.make-atom("inline_body")
-        let-binds = for lists.map2(arg from args, exp from exps):
-          A.s-let-bind(arg.l, arg, exp.visit(self))
-        end
-        cases(A.Ann) ann:
-          | a-blank => A.s-let-expr(l, let-binds, body.visit(self))
-          | a-any => A.s-let-expr(l, let-binds, body.visit(self))
-          | else =>
-            A.s-let-expr(l, let-binds + [list: A.s-let-bind(body.l, A.s-bind(l, false, a, ann), body.visit(self))], A.s-id(l, a))
+        if (args.length() == exps.length()):
+          a = A.global-names.make-atom("inline_body")
+          let-binds = for lists.map2(arg from args, exp from exps):
+            A.s-let-bind(arg.l, arg, exp.visit(self))
+          end
+          cases(A.Ann) ann:
+            | a-blank => A.s-let-expr(l, let-binds, body.visit(self))
+            | a-any => A.s-let-expr(l, let-binds, body.visit(self))
+            | else =>
+              A.s-let-expr(l,
+                let-binds
+                  + [list: A.s-let-bind(body.l, A.s-bind(l, false, a, ann), body.visit(self))],
+                A.s-id(l, a))
+          end
+        else:
+          A.s-app(loc, f.visit(self), exps.map(_.visit(self)))
         end
       | else => A.s-app(loc, f.visit(self), exps.map(_.visit(self)))
     end
@@ -545,13 +546,21 @@ fun check-unbound(initial-env, ast):
   var errors = [list: ] # THE MUTABLE LIST OF UNBOUND IDS
   fun add-error(err): errors := err ^ link(_, errors) end
   fun handle-id(this-id, env):
-    when is-none(bind-exp(this-id, env)):
+    if A.is-s-underscore(this-id.id):
+      add-error(CS.underscore-as-expr(this-id.id.l))
+    else if is-none(bind-exp(this-id, env)):
       add-error(CS.unbound-id(this-id))
+    else:
+      nothing
     end
   end
   fun handle-type-id(ann, env):
-    when not(env.has-key(ann.id.key())):
+    if A.is-s-underscore(ann.id):
+      add-error(CS.underscore-as-ann(ann.id.l))
+    else if not(env.has-key(ann.id.key())):
       add-error(CS.unbound-type-id(ann))
+    else:
+      nothing
     end
   end
   ast.visit(binding-env-iter-visitor(initial-env).{
@@ -595,7 +604,7 @@ fun value-delays-exec-of(name, expr):
 end
 
 letrec-visitor = A.default-map-visitor.{
-  env: SD.immutable-string-dict(),
+  env: SD.make-string-dict(),
   s-letrec(self, l, binds, body):
     bind-envs = for map2(b1 from binds, i from range(0, binds.length())):
       rhs-is-delayed = value-delays-exec-of(b1.b.id, b1.value)
@@ -618,7 +627,7 @@ letrec-visitor = A.default-map-visitor.{
     A.s-letrec(l, new-binds, new-body)
   end,
   s-id-letrec(self, l, id, _):
-    A.s-id-letrec(l, id, self.env.get(id.key()))
+    A.s-id-letrec(l, id, self.env.get-value(id.key()))
   end
 }
 
@@ -628,11 +637,56 @@ fun make-renamer(replacements :: SD.StringDict):
       a = A.s-atom(base, serial)
       k = a.key()
       if replacements.has-key(k):
-        replacements.get(k)
+        replacements.get-value(k)
       else:
         a
       end
     end
   }
+end
+
+fun wrap-extra-imports(p :: A.Program, env :: CS.ExtraImports) -> A.Program:
+  expr = p.block
+  cases(CS.ExtraImports) env:
+    | extra-imports(imports) =>
+      full-imports = p.imports + for map(i from imports):
+          cases(CS.Dependency) i.dependency:
+            | builtin(name) =>
+              A.s-import-complete(
+                p.l,
+                i.values.map(A.s-name(p.l, _)),
+                i.types.map(A.s-name(p.l, _)),
+                A.s-const-import(p.l, name),
+                A.s-name(p.l, i.as-name),
+                A.s-name(p.l, i.as-name))
+            | dependency(protocol, args) =>
+              A.s-import-complete(
+                p.l,
+                i.values.map(A.s-name(p.l, _)),
+                i.types.map(A.s-name(p.l, _)),
+                A.special-import(p.l, protocol, args),
+                A.s-name(p.l, i.as-name),
+                A.s-name(p.l, i.as-name))
+          end
+        end
+      A.s-program(p.l, p._provide, p.provided-types, full-imports, p.block)
+  end
+end
+
+fun import-to-dep(imp):
+  cases(A.ImportType) imp:
+    # crossover compatibility
+    | s-file-import(_, path) => CS.dependency("legacy-path", [list: path])
+    | s-const-import(_, modname) => CS.builtin(modname)
+    | s-special-import(_, protocol, args) => CS.dependency(protocol, args)
+  end
+end
+
+fun import-to-dep-anf(imp):
+  cases(N.AImportType) imp:
+    | a-import-builtin(_, name) => CS.builtin(name)
+    | a-import-file(_, name) => CS.dependency("legacy-path", [list: name])
+    | a-import-special(_, kind, args) => CS.dependency(kind, args)
+  end
 end
 

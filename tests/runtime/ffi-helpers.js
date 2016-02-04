@@ -1,6 +1,6 @@
 var r = require("requirejs")
 
-define(["./matchers", "../evaluator/eval-matchers","js/js-numbers", "js/ffi-helpers", "trove/srcloc"], function (matchers, e, jsnums, ffiLib, srclocLib) {
+define(["./matchers", "../evaluator/eval-matchers", "js/ffi-helpers", "trove/srcloc", "trove/render-error-display"], function (matchers, e, ffiLib, srclocLib, rendererrorLib) {
 
   _ = require('jasmine-node');
   var path = require('path');
@@ -21,7 +21,6 @@ define(["./matchers", "../evaluator/eval-matchers","js/js-numbers", "js/ffi-help
         output += str;
     }
 
-
     beforeEach(function(){
         output = "";
         rt = R.makeRuntime({'stdout' : stdout});
@@ -31,7 +30,6 @@ define(["./matchers", "../evaluator/eval-matchers","js/js-numbers", "js/ffi-help
         ffi = ffiLib(rt, rt.namespace);
         addPyretMatchers(this, rt);
     });
-
 
     describe("FFI", function() {
       it("should make lists and come back", function() {
@@ -53,13 +51,16 @@ define(["./matchers", "../evaluator/eval-matchers","js/js-numbers", "js/ffi-help
       });
 
       it("should catch type/arity errors in runtime functions", function(done) {
-        // Can't use toThrow because of generative structs
-        expect(function() { ffi.throwFieldNotFound("not a srcloc", undefined, undefined); })
-          .toThrowRuntimeExn("Error: expected Srcloc, but got \"not a srcloc\"");
-        expect(function() { rt.confirm(str("too"), str("many"), str("arguments")); })
-          .toThrowRuntimeExn("expects 2 arguments");
-        P.wait(done);
-      })
+        rt.loadModulesNew(rt.namespace, [rendererrorLib], function(rendererrorLib) {
+          var rendererror = rt.getField(rendererrorLib, "values");
+          // Can't use toThrow because of generative structs
+          expect(function() { ffi.throwFieldNotFound("not a srcloc", undefined, undefined); })
+            .toThrowRuntimeExn(rt, rendererror, "Expected \"Srcloc\", but got \"not a srcloc\"");
+          expect(function() { rt.confirm(str("too"), str("many"), str("arguments")); })
+            .toThrowRuntimeExn(rt, rendererror, "Expected to get 2 arguments");
+          P.wait(done);
+        });
+      });
     });
   }
 

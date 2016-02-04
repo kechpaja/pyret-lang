@@ -1,5 +1,6 @@
 const R = require("requirejs");
-R(["../../../build/phase1/js/pyret-tokenizer", "../../../build/phase1/js/pyret-parser", "fs"], function(T, G, fs) {
+var build = process.env["PHASE"] || "build/phase1";
+R(["../../../" + build + "/js/pyret-tokenizer", "../../../" + build + "/js/pyret-parser", "fs"], function(T, G, fs) {
   _ = require("jasmine-node");
   function parse(str) {
     const toks = T.Tokenizer;
@@ -57,7 +58,7 @@ R(["../../../build/phase1/js/pyret-tokenizer", "../../../build/phase1/js/pyret-p
       "import", "provide-types", "provide", "as", "newtype", "type-let", "type", "lazy",
       "var", "letrec", "let", "fun", "lam", "true", "false", "method", "doc:", "check:", "check",
       "try:", "except", "cases", "when", "ask:", "otherwise:", "if", "then:", "else:", "else if", "else",
-      "data", "with:", "sharing:", "shadow", "mutable", "cyclic", "graph:", "block:", "for", "from", "end",
+      "data", "with:", "sharing:", "shadow", "mutable", "cyclic", "block:", "for", "from", "end",
       "4/5", "-123/456", "01823.1225426", "-1.2", "1", "-2", "and", "or", "is", "satisfies", "raises",
       "```a one line string```", "```a two\nline string```", "\"a string\"", "'a string'",
     ];
@@ -99,7 +100,7 @@ R(["../../../build/phase1/js/pyret-tokenizer", "../../../build/phase1/js/pyret-p
     const trimmed_tok_words = tok_words.map(function(s) { return s.trim(); });
     const trimmed_tok_opers = tok_opers.map(function(s) { return s.trim(); });
     const all_toks = trimmed_tok_words.slice(0).push.apply(trimmed_tok_opers);
-    const ws = [ "", "   ", "\n", "# comment\n\n", "   \n", "  \n\n   ", "  \n  # comment  \n   \n   " ];
+    const ws = [ "", "   ", "\n", "# comment\n\n", "   \n", "  \n\n   ", "  \n  # comment  \n   \n   ", "#\n" ];
     it("should have tight lexical extents for all tokens", function() {
       lex("");
       expect(numToks).toBe(1);
@@ -205,6 +206,16 @@ R(["../../../build/phase1/js/pyret-tokenizer", "../../../build/phase1/js/pyret-p
       console.log("Finished token-triple tests");      
     });
   });
+  describe("lexing", function() {
+    it("should lex triple-quoted strings", function() {
+      expect(parse("```asd`asd```")).not.toBe(false);
+      expect(parse("```asd\`asd```")).not.toBe(false);
+      expect(parse("```asd``asd```")).not.toBe(false);
+      expect(parse("```asd``\\`asd```")).not.toBe(false);
+      expect(parse("```asd``\\````")).not.toBe(false);
+      expect(parse("```asd```asd```")).toBe(false);
+    });
+  });   
   describe("parsing", function() {
     it("should parse lets and letrecs", function() {
       expect(parse("let: 10 end")).toBe(false);
@@ -338,13 +349,13 @@ R(["../../../build/phase1/js/pyret-tokenizer", "../../../build/phase1/js/pyret-p
     });
 
     it("should not care about whitespace and angle brackets in declarations", function() {
-      expect(parse("fun<A>print(): end")).not.toBe(false);
-      expect(parse("fun< A>print(): end")).not.toBe(false);
-      expect(parse("fun <A>print(): end")).not.toBe(false);
-      expect(parse("fun < A>print(): end")).not.toBe(false);
-      expect(parse("fun<A >print(): end")).not.toBe(false);
-      expect(parse("fun<A> print(): end")).not.toBe(false);
-      expect(parse("fun<A > print(): end")).not.toBe(false);
+      expect(parse("fun print<A>(): end")).not.toBe(false);
+      expect(parse("fun print< A>(): end")).not.toBe(false);
+      expect(parse("fun print <A>(): end")).not.toBe(false);
+      expect(parse("fun print < A>(): end")).not.toBe(false);
+      expect(parse("fun print<A >(): end")).not.toBe(false);
+      expect(parse("fun print< A >(): end")).not.toBe(false);
+      expect(parse("fun print <A >(): end")).not.toBe(false);
     });
 
     it("should not treat (...) after operators as application", function() {
@@ -358,7 +369,7 @@ R(["../../../build/phase1/js/pyret-tokenizer", "../../../build/phase1/js/pyret-p
     });
 
     it("should not mind ; at EOL, and then another statement", function() {
-      var a = "  fun<T> x(x :: T) -> T: x;";
+      var a = "  fun x<T>(x :: T) -> T: x;";
       expect(parse("block:\n" + a + "\n" + a + "end")).not.toBe(false);
       expect(parse("block:\n" + a + " \n" + a + "end")).not.toBe(false);
     });
@@ -381,6 +392,14 @@ R(["../../../build/phase1/js/pyret-tokenizer", "../../../build/phase1/js/pyret-p
       expect(parse("{ asdf:(asdf) }")).not.toBe(false);
       expect(parse("{ asdf : (asdf) }")).not.toBe(false);
       expect(parse("{ asdf :\n(asdf) }")).not.toBe(false);
+      expect(parse("fun f(x):\nx\nwhere:(f(5)) is 5\nend")).not.toBe(false);
+      expect(parse("check:(5) is 5 end")).not.toBe(false);
+      expect(parse("examples:(5) is 5 end")).not.toBe(false);
+      expect(parse("ask:\n  | false then: 1\n  | otherwise:(true)\nend")).not.toBe(false);
+      expect(parse("ask:\n  | true then:(1)\nend")).not.toBe(false);
+      expect(parse("if true: 1 else:(1) end")).not.toBe(false);
+      expect(parse("block:(5) end")).not.toBe(false);
+      expect(parse("ask:\n  |(true) then: 1\nend")).not.toBe(false);
     });
 
     it("should treat (...) as grouping after =", function() {
@@ -431,12 +450,6 @@ R(["../../../build/phase1/js/pyret-tokenizer", "../../../build/phase1/js/pyret-p
       expect(parse("{ ref ref: 5 }")).toBe(false); 
     });
 
-    it("should parse mutable graph exprs", function() {
-      expect(parse("ref-graph: WOR = 5 end")).not.toBe(false);
-      expect(parse("ref-graph: WOR = [list: 1] BOS = [list: 3] end")).not.toBe(false);
-      expect(parse("ref-graph: WOR = [list: 1] BOS = [list: 3] PVD = [list: BOS] end")).not.toBe(false);
-    });
-
     it("should parse imports", function() {
       expect(parse('import modname as G')).not.toBe(false);
       expect(parse('import "modname.arr" as G')).not.toBe(false);
@@ -444,6 +457,15 @@ R(["../../../build/phase1/js/pyret-tokenizer", "../../../build/phase1/js/pyret-p
       expect(parse('import gdrive("a") as G')).not.toBe(false);
       expect(parse('import gdrive("a", "b") as G')).not.toBe(false);
       expect(parse('import gdrive() as G')).toBe(false);
+    });
+    
+    it("should parse includes", function() {
+      expect(parse('include modname')).not.toBe(false);
+      expect(parse('include "modname.arr"')).not.toBe(false);
+      expect(parse('include gdrive(a)')).toBe(false);
+      expect(parse('include gdrive("a")')).not.toBe(false);
+      expect(parse('include gdrive("a", "b")')).not.toBe(false);
+      expect(parse('include gdrive()')).toBe(false);
     });
 
     it("should parse new equality operators", function() {
@@ -469,6 +491,10 @@ R(["../../../build/phase1/js/pyret-tokenizer", "../../../build/phase1/js/pyret-p
       expect(parse('check: o is-not <=> o2;')).toBe(false);
     });
 
+    it("should parse examples", function() {
+      expect(parse('examples: 5 is 5 end')).not.toBe(false);
+    });
+
     it("should parse ref cases bindings", function() {
       expect(parse('cases(List) l: | link(ref first, rest) => 5 end')).not.toBe(false);
       expect(parse('cases(List) l: | link(ref first, ref rest) => 5 end')).not.toBe(false);
@@ -491,6 +517,70 @@ R(["../../../build/phase1/js/pyret-tokenizer", "../../../build/phase1/js/pyret-p
       expect(parse('data D: | var1 with: m<a>(self): 5 end sharing: m2<a>(self): 5 end end')).not.toBe(false);
       expect(parse('data D: | var1 with: m<a,b>(self): 5 end sharing: m2<a,b>(self): 5 end end')).not.toBe(false);
       expect(parse('data D: | var1 with: m<a,b,c>(self): 5 end sharing: m2<a,b,c>(self): 5 end end')).not.toBe(false);
+    });
+
+    it("should parse rec statements", function() {
+      expect(parse('rec a = 10')).not.toBe(false);
+      expect(parse('rec ohn = lz(1, lam(): ohn end)')).not.toBe(false);
+      expect(parse('rec = 5')).toBe(false);
+    });
+
+    it("should not parse bracket exprs", function() {
+      expect(parse('o.[x]')).toBe(false);
+    });
+
+    it("should not parse string keys", function() {
+      expect(parse('{"x x": true}')).toBe(false);
+      expect(parse("{'x x': true}")).toBe(false);
+    });
+
+    it("should parse block comments", function() {
+      expect(parse('#| anything |#')).not.toBe(false);
+      expect(parse('#| even with  | pipes |#')).not.toBe(false);
+      expect(parse('#|||#')).not.toBe(false);
+      expect(parse('#||||||#')).not.toBe(false);
+      expect(parse('#| | # | # | # | # |#')).not.toBe(false);
+      expect(parse('#| back to |##| back |#')).not.toBe(false);
+      expect(parse('#||##||#')).not.toBe(false);
+      expect(parse('#|\n|#')).not.toBe(false);
+      expect(parse('#||#')).not.toBe(false);
+      expect(parse(' #||#')).not.toBe(false);
+      expect(parse('\n#||#')).not.toBe(false);
+      expect(parse('\r\n#||#')).not.toBe(false);
+      // Unterminated comments
+      expect(parse('#| #| |#')).toBe(false);
+      expect(parse('#|#||#')).toBe(false);
+      expect(parse('#|#|#')).toBe(false);
+      // Nested comments
+      expect(parse('x = #| not #| parsed |# here either |# 5')).not.toBe(false);
+
+      expect(parse('#| |# # extra hash for line comment')).not.toBe(false);
+      expect(parse('#| |# closing hash doesn\'t count as line comment')).toBe(false);
+
+      expect(parse('#| |#\nfun f():\n  5\nend\n#| |#')).not.toBe(false);
+
+      // mid-expression
+      expect(parse('#| |#\nfun f():\n  5 + #| |#\n    5\nend\n#| |#')).not.toBe(false);
+      expect(parse('lam(x #| stuff |#, y): x + y end')).not.toBe(false);
+      expect(parse('lam(x #| two |##| comments|#, y): x + y end')).not.toBe(false);
+
+      // PyretDoc style?
+      expect(parse('#|\n' +
+                   '# Things\n' +
+                   '# about \n' +
+                   '# the \n' +
+                   '# program \n' +
+                   '|#')).not.toBe(false);
+
+      // notices the _first_ close comment
+      expect(parse('#| |# |#')).toBe(false);
+
+
+    });
+
+    it("should not ignore the line after an empty hash comment", function(){
+      expect(parse('#\n1')).not.toBe(false);
+      expect(parse('#\n{1:2}')).toBe(false);
     });
   });
 

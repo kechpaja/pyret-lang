@@ -5,6 +5,10 @@ provide-types *
 import ast as A
 import pprint as PP
 import srcloc as SL
+import string-dict as SD
+
+type StringDict = SD.StringDict
+
 
 type Loc = SL.Srcloc
 
@@ -27,14 +31,13 @@ str-var = PP.str("var ")
 str-if = PP.str("if ")
 str-elsecolon = PP.str("else:")
 str-elsebranch = PP.str("| else =>")
-str-try = PP.str("try:")
 str-thickarrow = PP.str("=>")
-str-except = PP.str("except")
 str-spacecolonequal = PP.str(" :=")
 str-spaceequal = PP.str(" =")
 str-import = PP.str("import")
 str-provide = PP.str("provide")
 str-as = PP.str("as")
+str-from = PP.str("from")
 str-newtype = PP.str("newtype ")
 
 dummy-loc = SL.builtin("dummy-location")
@@ -69,15 +72,22 @@ data AImportType:
 end
 
 data AImport:
-  | a-import(l :: Loc, import-type :: AImportType, name :: A.Name) with:
-    label(self): "a-import" end,
+  | a-import-complete(
+      l :: Loc,
+      values :: List<A.Name>,
+      types :: List<A.Name>,
+      import-type :: AImportType,
+      vals-name :: A.Name,
+      types-name :: A.Name) with:
+    label(self): "a-import-complete" end,
     tosource(self):
-      PP.flow([list: str-import, self.import-type.tosource(), str-as, self.name.tosource()])
-    end
-  | a-import-types(l :: Loc, import-type :: AImportType, name :: A.Name, types :: A.Name) with:
-    label(self): "a-import-types" end,
-    tosource(self):
-      PP.flow([list: str-import, self.import-type.tosource(), str-as, self.name.tosource(), PP.commabreak, self.types.tosource()])
+      PP.flow([list: str-import,
+          PP.flow-map(PP.commabreak, _.tosource(), self.values + self.types),
+          str-from,
+          self.import-type.tosource(),
+          str-as,
+          self.vals-name.tosource(),
+          self.types-name.tosource()])
     end
 sharing:
   visit(self, visitor):
@@ -244,15 +254,49 @@ sharing:
   end
 end
 
+data ADefinedValue:
+  | a-defined-value(name :: String, value :: AVal) with:
+    label(self): "a-defined-value" end,
+    tosource(self):
+      PP.infix(INDENT, 1, str-colon, PP.str(self.name), self.value.tosource())
+    end
+sharing:
+  visit(self, visitor):
+    self._match(visitor, lam(): raise("No visitor field for " + self.label()) end)
+  end
+end
+data ADefinedType:
+  | a-defined-type(name :: String, typ :: A.Ann) with:
+    label(self): "a-defined-type" end,
+    tosource(self):
+      PP.infix(INDENT, 1, str-coloncolon, PP.str(self.name), self.typ.tosource())
+    end
+sharing:
+  visit(self, visitor):
+    self._match(visitor, lam(): raise("No visitor field for " + self.label()) end)
+  end
+end
+
 data ALettable:
-  | a-module(l :: Loc, answer :: AVal, provides :: AVal, types, checks :: AVal) with:
+  | a-module(
+      l :: Loc,
+      answer :: AVal,
+      defined-values :: List<ADefinedValue>,
+      defined-types :: List<ADefinedType>,
+      provided-values :: AVal,
+      provided-types,
+      checks :: AVal) with:
     label(self): "a-module" end,
     tosource(self):
       PP.str("Module") + PP.parens(PP.flow-map(PP.commabreak, lam(x): x end, [list:
             PP.infix(INDENT, 1, str-colon, PP.str("Answer"), self.answer.tosource()),
-            PP.infix(INDENT, 1, str-colon, PP.str("Provides"), self.provides.tosource()),
-            PP.infix(INDENT, 1, str-colon, PP.str("Types"), 
-              PP.brackets(PP.flow-map(PP.commabreak, _.tosource(), self.types))),
+            PP.infix(INDENT, 1, str-colon,PP.str("DefinedValues"), 
+              PP.brackets(PP.flow-map(PP.commabreak, _.tosource(), self.defined-values))),
+            PP.infix(INDENT, 1, str-colon,PP.str("DefinedTypes"), 
+              PP.brackets(PP.flow-map(PP.commabreak, _.tosource(), self.defined-types))),
+            PP.infix(INDENT, 1, str-colon, PP.str("Provides"), self.provided-values.tosource()),
+            PP.infix(INDENT, 1, str-colon,PP.str("Types"), 
+              PP.brackets(PP.flow-map(PP.commabreak, _.tosource(), self.provided-types))),
             PP.infix(INDENT, 1, str-colon, PP.str("checks"), self.checks.tosource())]))
     end
   | a-cases(l :: Loc, typ :: A.Ann, val :: AVal, branches :: List<ACasesBranch>, _else :: AExpr) with:
@@ -288,6 +332,13 @@ data ALettable:
     label(self): "a-app" end,
     tosource(self):
       PP.group(self._fun.tosource()
+          + PP.parens(PP.nest(INDENT,
+            PP.separate(PP.commabreak, self.args.map(lam(f): f.tosource() end)))))
+    end
+  | a-method-app(l :: Loc, obj :: AVal, meth :: String, args :: List<AVal>) with:
+    label(self): "a-app" end,
+    tosource(self):
+      PP.group(PP.infix(INDENT, 0, str-period, self.obj.tosource(), PP.str(self.meth))
           + PP.parens(PP.nest(INDENT,
             PP.separate(PP.commabreak, self.args.map(lam(f): f.tosource() end)))))
     end
@@ -349,7 +400,7 @@ data ALettable:
     tosource(self): self.v.tosource() end
 sharing:
   visit(self, visitor):
-    self._match(visitor, lam(): raise("No visitor field for " + self.label()) end)
+    self._match(visitor, lam(_): raise("No visitor field for " + self.label()) end)
   end
 end
 
@@ -412,11 +463,8 @@ end
 
 fun strip-loc-import(i :: AImport):
   cases(AImport) i:
-    | a-import(_, import-type, name) =>
-      a-import(dummy-loc, strip-loc-import-type(import-type), name.visit(A.dummy-loc-visitor))
-    | a-import-types(_, import-type, name, types) =>
-      a-import-types(dummy-loc, strip-loc-import-type(import-type),
-        name.visit(A.dummy-loc-visitor), types.visit(A.dummy-loc-visitor))
+    | a-import-complete(_, vns, tns, imp, vn, tn) =>
+      a-import-complete(dummy-loc, vns, tns, imp, vn, tn)
   end
 end
 
@@ -450,14 +498,16 @@ end
 
 fun strip-loc-lettable(lettable :: ALettable):
   cases(ALettable) lettable:
-    | a-module(_, answer, provides, types, checks) =>
-      a-module(dummy-loc, strip-loc-val(answer), strip-loc-val(provides),
+    | a-module(_, answer, dv, dt, provides, types, checks) =>
+      a-module(dummy-loc, strip-loc-val(answer), dv, dt, strip-loc-val(provides),
         types.map(_.visit(A.dummy-loc-visitor)), strip-loc-val(checks))
     | a-if(_, c, t, e) =>
       a-if(dummy-loc, strip-loc-val(c), strip-loc-expr(t), strip-loc-expr(e))
     | a-assign(_, id, value) => a-assign(dummy-loc, id, strip-loc-val(value))
     | a-app(_, f, args) =>
       a-app(dummy-loc, strip-loc-val(f), args.map(strip-loc-val))
+    | a-method-app(_, obj, meth, args) =>
+      a-method-app(dummy-loc, strip-loc-val(obj), meth, args.map(strip-loc-val))
     | a-prim-app(_, f, args) =>
       a-prim-app(dummy-loc, f, args.map(strip-loc-val))
     | a-array(_, vs) => a-array(dummy-loc, vs.map(strip-loc-val))
@@ -502,17 +552,11 @@ fun strip-loc-val(val :: AVal):
 end
 
 default-map-visitor = {
-  a-module(self, l :: Loc, answer :: AVal, provides :: AVal, types :: List<A.AField>, checks :: AVal):
-    a-module(l, answer.visit(self), provides.visit(self), types, checks.visit(self))
+  a-module(self, l :: Loc, answer :: AVal, dv, dt, provides :: AVal, types :: List<A.AField>, checks :: AVal):
+    a-module(l, answer.visit(self), dv, dt, provides.visit(self), types, checks.visit(self))
   end,
   a-program(self, l :: Loc, imports :: List<AImport>, body :: AExpr):
     a-program(l, imports.map(_.visit(self)), body.visit(self))
-  end,
-  a-import(self, l :: Loc, import-type :: AImportType, name :: A.Name):
-    a-import(l, import-type.visit(self), name.visit(self))
-  end,
-  a-import-types(self, l :: Loc, import-type :: AImportType, name :: A.NAme, types :: A.Name):
-    a-import-types(l, import-type.visit(self), name.visit(self), types.visit(self))
   end,
   a-import-file(self, l :: Loc, file :: String, name :: A.Name):
     a-import-file(l, file, name)
@@ -574,6 +618,9 @@ default-map-visitor = {
   end,
   a-app(self, l :: Loc, _fun :: AVal, args :: List<AVal>):
     a-app(l, _fun.visit(self), args.map(_.visit(self)))
+  end,
+  a-method-app(self, l :: Loc, obj :: AVal, meth :: String, args :: List<AVal>):
+    a-method-app(l, obj.visit(self), meth, args.map(_.visit(self)))
   end,
   a-prim-app(self, l :: Loc, f :: String, args :: List<AVal>):
     a-prim-app(l, f, args.map(_.visit(self)))
@@ -649,43 +696,46 @@ fun freevars-list-acc(anns :: List<A.Ann>, seen-so-far):
   end
 end
 
-fun freevars-ann-acc(ann :: A.Ann, seen-so-far :: Set<A.Name>) -> Set<A.Name>:
+rec get-ann = _.ann
+
+fun freevars-ann-acc(ann :: A.Ann, seen-so-far :: StringDict<A.Name>) -> StringDict<A.Name>:
   lst-a = freevars-list-acc(_, seen-so-far)
   cases(A.Ann) ann:
     | a-blank => seen-so-far
     | a-any => seen-so-far
-    | a-name(l, name) => seen-so-far.add(name)
+    | a-name(l, name) => seen-so-far.set(name.key(), name)
     | a-type-var(l, name) => seen-so-far
-    | a-dot(l, left, right) => seen-so-far.add(left)
+    | a-dot(l, left, right) => seen-so-far.set(left.key(), left)
     | a-arrow(l, args, ret, _) => lst-a(link(ret, args))
     | a-method(l, args, ret) => lst-a(link(ret, args))
-    | a-record(l, fields) => lst-a(fields.map(_.ann))
+    | a-record(l, fields) => lst-a(fields.map(get-ann))
     | a-app(l, a, args) => lst-a(link(a, args))
+    | a-method-app(l, a, _, args) => lst-a(link(a, args))
     | a-pred(l, a, pred) =>
       name = cases(A.Expr) pred:
         | s-id(_, n) => n
         | s-id-letrec(_, n, _) => n
       end
-      freevars-ann-acc(a, seen-so-far.add(name))
+      freevars-ann-acc(a, seen-so-far.set(name.key(), name))
   end
 end
 
-fun freevars-e-acc(expr :: AExpr, seen-so-far :: Set<A.Name>) -> Set<A.Name>:
+fun freevars-e-acc(expr :: AExpr, seen-so-far :: StringDict<A.Name>) -> StringDict<A.Name>:
   cases(AExpr) expr:
     | a-type-let(_, b, body) =>
       body-ids = freevars-e-acc(body, seen-so-far)
       cases(ATypeBind) b:
         | a-type-bind(_, name, ann) =>
-          freevars-ann-acc(ann, body-ids.remove(name))
+          freevars-ann-acc(ann, body-ids.remove(name.key()))
         | a-newtype-bind(_, name, nameb) =>
-          body-ids.remove(name).remove(nameb)
+          body-ids.remove(name.key()).remove(nameb.key())
       end
     | a-let(_, b, e, body) =>
       from-body = freevars-e-acc(body, seen-so-far)
-      freevars-ann-acc(b.ann, freevars-l-acc(e, from-body.remove(b.id)))
+      freevars-ann-acc(b.ann, freevars-l-acc(e, from-body.remove(b.id.key())))
     | a-var(_, b, e, body) =>
       from-body = freevars-e-acc(body, seen-so-far)
-      freevars-ann-acc(b.ann, freevars-l-acc(e, from-body.remove(b.id)))
+      freevars-ann-acc(b.ann, freevars-l-acc(e, from-body.remove(b.id.key())))
     | a-seq(_, e1, e2) =>
       from-e2 = freevars-e-acc(e2, seen-so-far)
       freevars-l-acc(e1, from-e2)
@@ -693,8 +743,8 @@ fun freevars-e-acc(expr :: AExpr, seen-so-far :: Set<A.Name>) -> Set<A.Name>:
   end
 end
 
-fun freevars-e(expr :: AExpr) -> Set<A.Name>:
-  freevars-e-acc(expr, sets.empty-tree-set)
+fun freevars-e(expr :: AExpr) -> StringDict<A.Name>:
+  freevars-e-acc(expr, empty-dict)
 where:
   d = dummy-loc
   n = A.global-names.make-atom
@@ -702,10 +752,10 @@ where:
   y = n("y")
   freevars-e(
       a-let(d, a-bind(d, x, A.a-blank), a-val(d, a-num(d, 4)),
-        a-lettable(d, a-val(d, a-id(d, y))))).to-list() is [list: y]
+        a-lettable(d, a-val(d, a-id(d, y))))).keys().to-list() is [list: y.key()]
 end
 
-fun freevars-variant-acc(v :: AVariant, seen-so-far :: Set<A.Name>) -> Set<A.Name>:
+fun freevars-variant-acc(v :: AVariant, seen-so-far :: StringDict<A.Name>) -> StringDict<A.Name>:
   from-members = cases(AVariant) v:
     | a-variant(_, _, _, members, _) =>
       for fold(acc from seen-so-far, m from members):
@@ -718,13 +768,17 @@ fun freevars-variant-acc(v :: AVariant, seen-so-far :: Set<A.Name>) -> Set<A.Nam
   end
 end
 
-fun freevars-branches-acc(branches :: List<ACasesBranch>, seen-so-far :: Set<A.Name>) -> Set<A.Name>:
+rec get-id = _.id
+
+fun freevars-branches-acc(branches :: List<ACasesBranch>, seen-so-far :: StringDict<A.Name>) -> StringDict<A.Name>:
   for fold(acc from seen-so-far, b from branches):
     cases(ACasesBranch) b:
       | a-cases-branch(_, _, _, args, body) =>
         from-body = freevars-e-acc(body, acc)
         shadow args = args.map(_.bind)
-        without-args = from-body.difference(sets.list-to-tree-set(args.map(_.id)))
+        without-args = for fold(without from from-body, arg from args.map(get-id)):
+          without.remove(arg.key())
+        end
         for fold(inner-acc from without-args, arg from args):
           freevars-ann-acc(arg.ann, inner-acc)
         end
@@ -733,9 +787,9 @@ fun freevars-branches-acc(branches :: List<ACasesBranch>, seen-so-far :: Set<A.N
     end
   end
 end
-fun freevars-l-acc(e :: ALettable, seen-so-far :: Set<A.Name>) -> Set<A.Name>:
+fun freevars-l-acc(e :: ALettable, seen-so-far :: StringDict<A.Name>) -> StringDict<A.Name>:
   cases(ALettable) e:
-    | a-module(_, ans, provs, types, checks) =>
+    | a-module(_, ans, dv, dt, provs, types, checks) =>
       freevars-v-acc(ans,
         freevars-v-acc(provs,
           freevars-list-acc(types.map(_.ann),
@@ -751,10 +805,15 @@ fun freevars-l-acc(e :: ALettable, seen-so-far :: Set<A.Name>) -> Set<A.Name>:
       for fold(acc from seen-so-far, shadow v from vs):
         freevars-v-acc(v, acc)
       end
-    | a-assign(_, id, v) => freevars-v-acc(v, seen-so-far.add(id))
+    | a-assign(_, id, v) => freevars-v-acc(v, seen-so-far.set(id.key(), id))
     | a-app(_, f, args) =>
       from-f = freevars-v-acc(f, seen-so-far)
       for fold(acc from from-f, arg from args):
+        freevars-v-acc(arg, acc)
+      end
+    | a-method-app(_, obj, _, args) =>
+      from-obj = freevars-v-acc(obj, seen-so-far)
+      for fold(acc from from-obj, arg from args):
         freevars-v-acc(arg, acc)
       end
     | a-prim-app(_, _, args) =>
@@ -763,14 +822,18 @@ fun freevars-l-acc(e :: ALettable, seen-so-far :: Set<A.Name>) -> Set<A.Name>:
       end
     | a-lam(_, args, ret, body) =>
       from-body = freevars-e-acc(body, seen-so-far)
-      without-args = from-body.difference(sets.list-to-tree-set(args.map(_.id)))
+      without-args = for fold(without from from-body, arg from args.map(get-id)):
+          without.remove(arg.key())
+        end
       from-args = for fold(acc from without-args, a from args):
         freevars-ann-acc(a.ann, acc)
       end
       freevars-ann-acc(ret, from-args)
     | a-method(_, args, ret, body) =>
       from-body = freevars-e-acc(body, seen-so-far)
-      without-args = from-body.difference(sets.list-to-tree-set(args.map(_.id)))
+      without-args = for fold(without from from-body, arg from args.map(get-id)):
+          without.remove(arg.key())
+        end
       from-args = for fold(acc from without-args, a from args):
         freevars-ann-acc(a.ann, acc)
       end
@@ -796,7 +859,7 @@ fun freevars-l-acc(e :: ALettable, seen-so-far :: Set<A.Name>) -> Set<A.Name>:
       from-shared = for fold(acc from from-variants, s from shared):
         freevars-v-acc(s.value, acc)
       end
-      from-shared.add(namet)
+      from-shared.set(namet.key(), namet)
     | a-extend(_, supe, fields) =>
       from-supe = freevars-v-acc(supe, seen-so-far)
       for fold(acc from from-supe, f from fields):
@@ -810,15 +873,15 @@ fun freevars-l-acc(e :: ALettable, seen-so-far :: Set<A.Name>) -> Set<A.Name>:
   end
 end
 
-fun freevars-l(e :: ALettable) -> Set<A.Name>:
-  freevars-l-acc(e, sets.empty-tree-set)
+fun freevars-l(e :: ALettable) -> StringDict<A.Name>:
+  freevars-l-acc(e, empty-dict)
 end
 
-fun freevars-v-acc(v :: AVal, seen-so-far :: Set<A.Name>) -> Set<A.Name>:
+fun freevars-v-acc(v :: AVal, seen-so-far :: StringDict<A.Name>) -> StringDict<A.Name>:
   cases(AVal) v:
-    | a-id(_, id) => seen-so-far.add(id)
-    | a-id-var(_, id) => seen-so-far.add(id)
-    | a-id-letrec(_, id, _) => seen-so-far.add(id)
+    | a-id(_, id) => seen-so-far.set(id.key(), id)
+    | a-id-var(_, id) => seen-so-far.set(id.key(), id)
+    | a-id-letrec(_, id, _) => seen-so-far.set(id.key(), id)
     | a-srcloc(_, _) => seen-so-far
     | a-num(_, _) => seen-so-far
     | a-str(_, _) => seen-so-far
@@ -828,13 +891,21 @@ fun freevars-v-acc(v :: AVal, seen-so-far :: Set<A.Name>) -> Set<A.Name>:
   end
 end
 
-fun freevars-v(v :: AVal) -> Set<A.Name>:
-  freevars-v-acc(v, sets.empty-tree-set)
+fun freevars-v(v :: AVal) -> StringDict<A.Name>:
+  freevars-v-acc(v, empty-dict)
 end
 
-fun <a> unions(ss :: List<Set<a>>) -> Set<a>:
-  for fold(unioned from sets.empty-tree-set, s from ss):
-    unioned.union(s)
+fun freevars-prog(p :: AProg) -> StringDict<A.Name>:
+  cases(AProg) p:
+    | a-program(l, imports, body) =>
+      body-vars = freevars-e(body)
+      for fold(d from body-vars, i from imports):
+        for fold(shadow d from d, n from i.values + i.types):
+          d.remove(n.key())
+        end
+      end
   end
 end
+
+rec empty-dict = [SD.string-dict:]
 

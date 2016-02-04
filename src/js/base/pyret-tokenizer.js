@@ -61,7 +61,7 @@ define(["../../../lib/jglr/jglr"], function(E) {
     }
     return GenTokenizer.prototype.makeToken(tok_type, s, pos);
   }
-  Tokenizer.prototype.postProcessMatch = function(tok, match) {
+  Tokenizer.prototype.postProcessMatch = function(tok, match, str) {
     var tok_type = tok.name;
     if (tok_type === "PAREN?") {
       for (var j = 0; j < this.Tokens.length; j++) {
@@ -80,13 +80,30 @@ define(["../../../lib/jglr/jglr"], function(E) {
           break;
         }
       }
-    } else if (tok_type == "LPAREN?") {
+    } else if (tok_type === "LPAREN?") {
       tok_type = this.parenIsForExp ? "PARENSPACE" : "PARENNOSPACE";
+    } else if (tok_type === "BLOCKCOMMENT") {
+      return this.tokenizeBlockComment(match, str, 1, 2);
     }
     this.parenIsForExp = !!tok.parenIsForExp;
     return tok_type;
   }
-
+  Tokenizer.prototype.tokenizeBlockComment = function(match, str, nestingDepth, commentLen) {
+    var strLen = str.length;
+    while (nestingDepth > 0 && commentLen < strLen) {
+      if (str.substr(commentLen, 2) === "#|") { 
+        nestingDepth++;
+        commentLen += 2;
+      } else if (str.substr(commentLen, 2) === "|#") {
+        nestingDepth--;
+        commentLen += 2;
+      } else {
+        commentLen++;
+      }
+    }
+    match[0] = str.substr(0, commentLen);
+    return nestingDepth == 0 ? "COMMENT" : "UNTERMINATED-BLOCK-COMMENT";
+  }
 
   const ws_after = "(?=\\s|$|#)"; // allow actual space, end-of-input, or comments
 
@@ -96,12 +113,15 @@ define(["../../../lib/jglr/jglr"], function(E) {
   function op(str) { return "^\\s+" + str + ws_after; }
 
   const name = new RegExp("^[_a-zA-Z][_a-zA-Z0-9]*(?:-+[_a-zA-Z0-9]+)*", STICKY_REGEXP);
-  const number = new RegExp("^-?[0-9]+(?:\\.[0-9]+)?", STICKY_REGEXP);
-  const rational = new RegExp("^-?[0-9]+/[0-9]+", STICKY_REGEXP);
+  const number = new RegExp("^[-+]?[0-9]+(?:\\.[0-9]+)?(?:[eE][-+]?[0-9]+)?", STICKY_REGEXP);
+  const badNumber = new RegExp("^[+-]?\\.[0-9]+(?:[eE][-+]?[0-9]+)?", STICKY_REGEXP);
+  const roughnum = new RegExp("^~[-+]?[0-9]+(?:\\.[0-9]+)?(?:[eE][-+]?[0-9]+)?", STICKY_REGEXP);
+  const rational = new RegExp("^[-+]?[0-9]+/[0-9]+", STICKY_REGEXP);
   const parenparen = new RegExp("^\\((?=\\()", STICKY_REGEXP); // NOTE: Don't include the following paren
   const spaceparen = new RegExp("^\\s+\\(", STICKY_REGEXP);
   const ws = new RegExp("^\\s+", STICKY_REGEXP);
-  const comment = new RegExp("^#.*(?:\\n|\\r|\\r\\n|\\n\\r|$)", STICKY_REGEXP)
+  const comment = new RegExp("^(#((?!\\|).*)?(?:\\n|\\r|\\r\\n|\\n\\r|$))", STICKY_REGEXP)
+  const blockcommentstart = new RegExp("^(#\\|)", STICKY_REGEXP);
   const bar = new RegExp("^\\|", STICKY_REGEXP);
   const langle = new RegExp("^<", STICKY_REGEXP);
   const rangle = new RegExp("^>", STICKY_REGEXP);
@@ -138,6 +158,8 @@ define(["../../../lib/jglr/jglr"], function(E) {
   const oplt = new RegExp(op("<"), STICKY_REGEXP);
   const opgt = new RegExp(op(">"), STICKY_REGEXP);
 
+  const opsNoSpace = new RegExp("^(?:\\^|\\+|-|\\*|/|<=|>=|<=>|>=|==|=~|<>|<|>)", STICKY_REGEXP);
+
   // English ops don't require whitespace. That way it is possible to catch them in ID position
   const opand = new RegExp(kw("and"), STICKY_REGEXP);
   const opor = new RegExp(kw("or"), STICKY_REGEXP);
@@ -157,14 +179,14 @@ define(["../../../lib/jglr/jglr"], function(E) {
   const opraisessatisfies = new RegExp(kw("raises-satisfies"), STICKY_REGEXP);
   const opraisesviolates = new RegExp(kw("raises-violates"), STICKY_REGEXP);
 
-  const slashable = "[\\\\nrt\"\']"
   const tquot_str =
     new RegExp("^```(?:" +
                "\\\\[01234567]{1,3}" +
                "|\\\\x[0-9a-fA-F]{1,2}" +
                "|\\\\u[0-9a-fA-f]{1,4}" +
-               "|\\\\[\\\\nrt\"\']" +
-               "|[^`])*```", STICKY_REGEXP); // NOTE: Allow unescaped newlines
+               "|\\\\[\\\\nrt\"\'`]" +
+               "|`{1,2}(?!`)" +
+               "|[^`\\\\])*```", STICKY_REGEXP); // NOTE: Allow unescaped newlines
   const dquot_str =
     new RegExp("^\"(?:" +
                "\\\\[01234567]{1,3}" +
@@ -180,7 +202,7 @@ define(["../../../lib/jglr/jglr"], function(E) {
                "|\\\\[\\\\nrt\"\']" +
                "|[^\\\\\'\n\r])*\'", STICKY_REGEXP);
 
-  const unterminated_string = new RegExp("^[\"\'].*", STICKY_REGEXP);
+  const unterminated_string = new RegExp("^(?:[\"\']|```).*", STICKY_REGEXP);
 
   const anychar = new RegExp("^[^]", STICKY_REGEXP);
   const Tokens = [
@@ -188,8 +210,8 @@ define(["../../../lib/jglr/jglr"], function(E) {
     {name: "PARENSPACE", val: spaceparen, parenIsForExp: true},
     {name: "LPAREN?", val: lparen, parenIsForExp: true},
 
-
     {name: "IMPORT", val: new RegExp(kw("import"), STICKY_REGEXP)},
+    {name: "INCLUDE", val: new RegExp(kw("include"), STICKY_REGEXP)},
     {name: "PROVIDE-TYPES", val: new RegExp(kw("provide-types"), STICKY_REGEXP)},
     {name: "PROVIDE", val: new RegExp(kw("provide"), STICKY_REGEXP)},
     {name: "AS", val: new RegExp(kw("as"), STICKY_REGEXP)},
@@ -197,6 +219,7 @@ define(["../../../lib/jglr/jglr"], function(E) {
     {name: "TYPE-LET", val: new RegExp(kw("type-let"), STICKY_REGEXP)},
     {name: "TYPE", val: new RegExp(kw("type"), STICKY_REGEXP)},
     {name: "VAR", val: new RegExp(kw("var"), STICKY_REGEXP)},
+    {name: "REC", val: new RegExp(kw("rec"), STICKY_REGEXP)},
     {name: "LETREC", val: new RegExp(kw("letrec"), STICKY_REGEXP)},
     {name: "LET", val: new RegExp(kw("let"), STICKY_REGEXP)},
     {name: "FUN", val: new RegExp(kw("fun"), STICKY_REGEXP)},
@@ -204,36 +227,34 @@ define(["../../../lib/jglr/jglr"], function(E) {
     {name: "TRUE", val: new RegExp(kw("true"), STICKY_REGEXP)},
     {name: "FALSE", val: new RegExp(kw("false"), STICKY_REGEXP)},
     {name: "METHOD", val: new RegExp(kw("method"), STICKY_REGEXP)},
-    {name: "DOC", val: new RegExp(colonKw("doc:"), STICKY_REGEXP)},
-    {name: "WHERE", val: new RegExp(colonKw("where:"), STICKY_REGEXP)},
-    {name: "CHECKCOLON", val: new RegExp(colonKw("check:"), STICKY_REGEXP)},
+    {name: "DOC", val: new RegExp(colonKw("doc:"), STICKY_REGEXP), parenIsForExp: true},
+    {name: "WHERE", val: new RegExp(colonKw("where:"), STICKY_REGEXP), parenIsForExp: true},
+    {name: "CHECKCOLON", val: new RegExp(colonKw("check:"), STICKY_REGEXP), parenIsForExp: true},
+    {name: "EXAMPLESCOLON", val: new RegExp(colonKw("examples:"), STICKY_REGEXP), parenIsForExp: true},
     {name: "CHECK", val: new RegExp(kw("check"), STICKY_REGEXP)},
-    {name: "TRY", val: new RegExp(colonKw("try:"), STICKY_REGEXP)},
-    {name: "EXCEPT", val: new RegExp(kw("except"), STICKY_REGEXP)},
     {name: "CASES", val: new RegExp(kw("cases"), STICKY_REGEXP)},
     {name: "WHEN", val: new RegExp(kw("when"), STICKY_REGEXP)},
-    {name: "ASKCOLON", val: new RegExp(colonKw("ask:"), STICKY_REGEXP)},
-    {name: "OTHERWISECOLON", val: new RegExp(colonKw("otherwise:"), STICKY_REGEXP)},
+    {name: "ASKCOLON", val: new RegExp(colonKw("ask:"), STICKY_REGEXP), parenIsForExp: true},
+    {name: "OTHERWISECOLON", val: new RegExp(colonKw("otherwise:"), STICKY_REGEXP), parenIsForExp: true},
     {name: "IF", val: new RegExp(kw("if"), STICKY_REGEXP)},
-    {name: "THENCOLON", val: new RegExp(colonKw("then:"), STICKY_REGEXP)},
-    {name: "ELSECOLON", val: new RegExp(colonKw("else:"), STICKY_REGEXP)},
+    {name: "THENCOLON", val: new RegExp(colonKw("then:"), STICKY_REGEXP), parenIsForExp: true},
+    {name: "ELSECOLON", val: new RegExp(colonKw("else:"), STICKY_REGEXP), parenIsForExp: true},
     {name: "ELSEIF", val: new RegExp(kw("else if"), STICKY_REGEXP)},
     {name: "ELSE", val: new RegExp(kw("else"), STICKY_REGEXP)},
     {name: "DATA", val: new RegExp(kw("data"), STICKY_REGEXP)},
-    {name: "WITH", val: new RegExp(colonKw("with:"), STICKY_REGEXP)},
-    {name: "SHARING", val: new RegExp(colonKw("sharing:"), STICKY_REGEXP)},
+    {name: "WITH", val: new RegExp(colonKw("with:"), STICKY_REGEXP), parenIsForExp: true},
+    {name: "SHARING", val: new RegExp(colonKw("sharing:"), STICKY_REGEXP), parenIsForExp: true},
     {name: "SHADOW", val: new RegExp(kw("shadow"), STICKY_REGEXP)},
     {name: "REF", val: new RegExp(kw("ref"), STICKY_REGEXP)},
     {name: "DATATYPE", val: new RegExp(kw("datatype"), STICKY_REGEXP)},
     {name: "WITHCONSTRUCTOR", val: new RegExp(kw("with constructor"), STICKY_REGEXP)},
-    {name: "GRAPH", val: new RegExp(colonKw("graph:"), STICKY_REGEXP)},
-    {name: "MGRAPH", val: new RegExp(colonKw("ref-graph:"), STICKY_REGEXP)},
-    {name: "BLOCK", val: new RegExp(colonKw("block:"), STICKY_REGEXP)},
+    {name: "BLOCK", val: new RegExp(colonKw("block:"), STICKY_REGEXP), parenIsForExp: true},
     {name: "FOR", val: new RegExp(kw("for"), STICKY_REGEXP)},
     {name: "FROM", val: new RegExp(kw("from"), STICKY_REGEXP)},
     {name: "END", val: new RegExp(kw("end"), STICKY_REGEXP)},
     {name: "LAZY", val: new RegExp(kw("lazy"), STICKY_REGEXP)},
 
+    {name: "BAD-NUMBER", val: badNumber},
     {name: "DOT", val: period},
     {name: "BANG", val: bang},
     {name: "PERCENT", val: percent},
@@ -241,12 +262,13 @@ define(["../../../lib/jglr/jglr"], function(E) {
     {name: "THINARROW", val: thinarrow},
     {name: "THICKARROW", val: thickarrow, parenIsForExp: true},
     {name: "COLONEQUALS", val: colonequals, parenIsForExp: true},
-    {name: "COLONCOLON", val: coloncolon},
+    {name: "COLONCOLON", val: coloncolon, parenIsForExp: true},
     {name: "COLON", val: colon, parenIsForExp: true},
-    {name: "BAR", val: bar},
+    {name: "BAR", val: bar, parenIsForExp: true},
 
     {name: "RATIONAL", val: rational},
     {name: "NUMBER", val: number},
+    {name: "NUMBER", val: roughnum},
     {name: "LONG_STRING", val: tquot_str},
     {name: "STRING", val: dquot_str},
     {name: "STRING", val: squot_str},
@@ -292,6 +314,9 @@ define(["../../../lib/jglr/jglr"], function(E) {
 
     {name: "EQUALS", val: equals, parenIsForExp: true},
 
+    {name: "BAD-OPER", val: opsNoSpace},
+
+    {name: "BLOCKCOMMENT", val: blockcommentstart},
     {name: "COMMENT", val: comment},
     {name: "WS", val: ws, parenIsForExp: true},
 
@@ -303,7 +328,9 @@ define(["../../../lib/jglr/jglr"], function(E) {
     {name: "UNTERMINATED-STRING", val: unterminated_string},
     {name: "UNKNOWN", val: anychar},
   ];
-
+  Tokens.forEach(function(tok) {
+    if (!tok.hasOwnProperty("parenIsForExp")) tok.parenIsForExp = false;
+  });
 
   return {
     'Tokenizer': new Tokenizer(true, Tokens)

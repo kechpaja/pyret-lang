@@ -1,43 +1,120 @@
 define([
     "./image-lib",
     "js/js-numbers",
-    "js/ffi-helpers"
-  ], function(imageLib, jsnums, ffiLib) {
+    "js/ffi-helpers",
+    "js/runtime-util",
+  ], function(imageLib, jsnums, ffiLib, util) {
 
-  return function(runtime, namespace) {
-    return runtime.loadJSModules(namespace, [imageLib, ffiLib], function(image, ffi) {
-      var colorDb = image.colorDb;
+  return util.definePyretModule(
+    "image",
+    [],
+    {
+      values: [
+        "circle",
+        "is-image-color",
+        "is-mode",
+        "is-x-place",
+        "is-y-place",
+        "is-angle",
+        "is-side-count",
+        "is-step-count",
+        "is-image",
+        "bitmap-url",
+        "open-image-url",
+        "image-url",
+        "images-equal",
+        "text",
+        "text-font",
+        "overlay",
+        "overlay-xy",
+        "overlay-align",
+        "underlay",
+        "underlay-xy",
+        "underlay-align",
+        "beside",
+        "beside-align",
+        "above",
+        "above-align",
+        "empty-scene",
+        "put-image",
+        "place-image",
+        "place-image-align",
+        "rotate",
+        "scale",
+        "scale-xy",
+        "flip-horizontal",
+        "flip-vertical",
+        "frame",
+        "crop",
+        "line",
+        "add-line",
+        "scene-line",
+        "square",
+        "rectangle",
+        "regular-polygon",
+        "ellipse",
+        "triangle",
+        "triangle-sas",
+        "triangle-sss",
+        "triangle-ass",
+        "triangle-ssa",
+        "triangle-aas",
+        "triangle-asa",
+        "triangle-saa",
+        "right-triangle",
+        "isosceles-triangle",
+        "star",
+        "star-sized",
+        "radial-star",
+        "star-polygon",
+        "rhombus",
+        "image-to-color-list",
+        "color-list-to-image",
+        "color-list-to-bitmap",
+        "image-width",
+        "image-height",
+        "image-baseline",
+        "name-to-color"
+      ],
+      types: [
+        "Image",
+        "Scene"
+      ]
+    },
+    function(runtime, namespace) {
+      return runtime.loadJSModules(namespace, [imageLib, ffiLib], function(image, ffi) {
+        var colorDb = image.colorDb;
 
-      var isString = runtime.isString;
+        var isString = runtime.isString;
 
-      var isFontFamily = function(x){
+        var isFontFamily = function(x){
+            return (isString(x) &&
+              (x.toString().toLowerCase() == "default" ||
+               x.toString().toLowerCase() == "decorative" ||
+               x.toString().toLowerCase() == "roman" ||
+               x.toString().toLowerCase() == "script" ||
+               x.toString().toLowerCase() == "swiss" ||
+               x.toString().toLowerCase() == "modern" ||
+               x.toString().toLowerCase() == "symbol" ||
+               x.toString().toLowerCase() == "system"))
+          || (x === false);		// false is also acceptable
+        };
+        var isFontStyle = function(x){
+            return (isString(x) &&
+              (x.toString().toLowerCase() == "normal" ||
+               x.toString().toLowerCase() == "italic" ||
+               x.toString().toLowerCase() == "slant"))
+          || (x === false);		// false is also acceptable
+        };
+        var isFontWeight = function(x){
+            return (isString(x) &&
+              (x.toString().toLowerCase() == "normal" ||
+               x.toString().toLowerCase() == "bold" ||
+               x.toString().toLowerCase() == "light"))
+          || (x === false);		// false is also acceptable
+        };
+        var isMode = function(x) {
           return (isString(x) &&
-            (x.toString().toLowerCase() == "default" ||
-             x.toString().toLowerCase() == "decorative" ||
-             x.toString().toLowerCase() == "roman" ||
-             x.toString().toLowerCase() == "script" ||
-             x.toString().toLowerCase() == "swiss" ||
-             x.toString().toLowerCase() == "modern" ||
-             x.toString().toLowerCase() == "symbol" ||
-             x.toString().toLowerCase() == "system"))
-        || (x === false);		// false is also acceptable
-      };
-      var isFontStyle = function(x){
-          return (isString(x) &&
-            (x.toString().toLowerCase() == "normal" ||
-             x.toString().toLowerCase() == "italic" ||
-             x.toString().toLowerCase() == "slant"))
-        || (x === false);		// false is also acceptable
-      };
-      var isFontWeight = function(x){
-          return (isString(x) &&
-            (x.toString().toLowerCase() == "normal" ||
-             x.toString().toLowerCase() == "bold" ||
-             x.toString().toLowerCase() == "light"))
-        || (x === false);		// false is also acceptable
-      };
-      var isMode = function(x) {
-        return (isString(x) &&
                 (x.toString().toLowerCase() == "solid" ||
                  x.toString().toLowerCase() == "outline")) ||
         ((jsnums.isReal(x)) &&
@@ -68,12 +145,9 @@ define([
              x.toString().toLowerCase() == "outline"));
       };
 
-
       var less = function(lhs, rhs) {
         return (rhs - lhs) > 0.00001;
       }
-
-
 
       var p = function(pred, name) {
         return function(val) { runtime.makeCheckType(pred, name)(val); return val; }
@@ -91,61 +165,78 @@ define([
       var checkBoolean = p(runtime.isBoolean, "Boolean");
 
       var checkNatural = p(function(val) {
-          return runtime.isNumber(val) && jsnums.isExactInteger(val) && jsnums.greaterThanOrEqual(val, 0);
+          return runtime.isNumber(val) && jsnums.isInteger(val) && jsnums.greaterThanOrEqual(val, 0);
         }, "Natural Number");
 
       var checkPositiveInteger = p(function(val) {
-          return runtime.isNumber(val) && jsnums.isExactInteger(val) && jsnums.greaterThanOrEqual(val, 0);
+          return runtime.isNumber(val) && jsnums.isInteger(val) && jsnums.greaterThanOrEqual(val, 0);
         }, "Positive Integer");
 
       var checkNonNegativeReal = p(function(val) {
           return runtime.isNumber(val) && jsnums.isReal(val) && jsnums.greaterThanOrEqual(val, 0);
         }, "Non-negative Real Number");
 
-      var _checkColor = p(image.isColorOrColorString, "Color");
 
-      var checkColor = function(val) {
-          var aColor = _checkColor(val);
-          if (colorDb.get(aColor)) {
-            aColor = colorDb.get(aColor);
-          }
-          return aColor;
-      };
+        var _checkColor = p(image.isColorOrColorString, "Color");
 
-      var checkImagePred = function(val) {
-        return runtime.isOpaque(val) && image.isImage(val.val);
-      };
-      var checkImageType = runtime.makeCheckType(checkImagePred, "Image");
-      var checkImage = function(val) {
-        checkImageType(val);
-        return val.val;
-      }
-      var checkImageOrScenePred = function(val) {
-        return runtime.isOpaque(val) && (image.isImage(val.val) || image.isScene(val.val));
-      };
-      var checkImageOrSceneType = runtime.makeCheckType(checkImageOrScenePred, "Image")
-      var checkImageOrScene = function(val) {
-        checkImageOrSceneType(val);
-        return val.val;
-      }
+        var checkColor = function(val) {
+            var aColor = _checkColor(val);
+            if (colorDb.get(aColor)) {
+              aColor = colorDb.get(aColor);
+            }
+            return aColor;
+        };
 
-      var checkScenePred = function(val) {
-        return runtime.isOpaque(val) && image.isScene(val.val);
-      };
+        var checkImagePred = function(val) {
+          return runtime.isOpaque(val) && image.isImage(val.val);
+        };
+        var checkImageType = runtime.makeCheckType(checkImagePred, "Image");
+        var checkImage = function(val) {
+          checkImageType(val);
+          return val.val;
+        }
+        var checkImageOrScenePred = function(val) {
+          return runtime.isOpaque(val) && (image.isImage(val.val) || image.isScene(val.val));
+        };
+        var checkImageOrSceneType = runtime.makeCheckType(checkImageOrScenePred, "Image")
+        var checkImageOrScene = function(val) {
+          checkImageOrSceneType(val);
+          return val.val;
+        }
 
-      var checkFontFamily = p(isFontFamily, "Font Family");
+        var checkScenePred = function(val) {
+          return runtime.isOpaque(val) && image.isScene(val.val);
+        };
 
-      var checkFontStyle = p(isFontStyle, "Font Style");
+        var checkFontFamily = p(isFontFamily, "Font Family");
 
-      var checkFontWeight = p(isFontWeight, "Font Weight");
+        var checkFontStyle = p(isFontStyle, "Font Style");
 
-      var checkPlaceX = p(isPlaceX, "X Place");
+        var checkFontWeight = p(isFontWeight, "Font Weight");
 
-      var checkPlaceY = p(isPlaceY, "Y Place");
+        var checkPlaceX = p(isPlaceX, "X Place");
 
+        var checkPlaceY = p(isPlaceY, "Y Place");
+
+
+        var checkAngle = p(image.isAngle, "Angle");
+
+
+        var checkMode = p(isMode, "Mode");
+
+        var checkSideCount = p(image.isSideCount, "Side Count");
+
+        var checkStepCount = p(image.isStepCount, "Step Count");
+
+        var checkPointsCount = p(image.isPointsCount, "Points Count");
+
+        var checkArity = ffi.checkArity;
+
+        var checkListofColor = p(function(val) {
+          return ffi.makeList(ffi.toArray(val).map(checkColor));
+        }, "List<Color>");
 
       var checkAngle = p(image.isAngle, "Angle");
-
 
       var checkMode = p(isMode, "Mode");
 
@@ -242,7 +333,7 @@ define([
             "is-step-count": f(function(maybeStepCount) {
               checkArity(1, arguments, "is-step-count");
               return runtime.wrap(image.isStepCount(maybeStepCount));
-            }),        
+            }),
             "is-image": f(function(maybeImage) {
               checkArity(1, arguments, "is-image");
               runtime.confirm(maybeImage, runtime.isOpaque);
@@ -268,7 +359,7 @@ define([
                 image.makeTextImage(String(string), jsnums.toFixnum(size), color,
                                     "normal", "Optimer", "", "", false));
             }),
-            "text-font": f(function(maybeString, maybeSize, maybeColor, maybeFace, 
+            "text-font": f(function(maybeString, maybeSize, maybeColor, maybeFace,
                                     maybeFamily, maybeStyle, maybeWeight, maybeUnderline) {
               checkArity(8, arguments);
               var string = checkString(maybeString);
@@ -422,7 +513,7 @@ define([
               } else {
                 var newScene = image.makeSceneImage(background.getWidth(),
                                               background.getHeight(),
-                                              [], 
+                                              [],
                                               false);
                 newScene = newScene.add(background, background.getWidth()/2, background.getHeight()/2);
                 newScene = newScene.add(img, jsnums.toFixnum(x), jsnums.toFixnum(y));
@@ -443,7 +534,7 @@ define([
               var img = checkImage(maybeImg);
               return makeImage(image.makeScaleImage(jsnums.toFixnum(factor), jsnums.toFixnum(factor), img));
             }),
-              
+
             "scale-xy": f(function(maybeXFactor, maybeYFactor, maybeImg) {
               checkArity(3, arguments, "scale-xy");
               var xFactor = checkReal(maybeXFactor);
@@ -469,7 +560,7 @@ define([
               var img = checkImage(maybeImg);
               return makeImage(image.makeFrameImage(img));
             }),
-            
+
             "crop": f(function(maybeX, maybeY, maybeWidth, maybeHeight, maybeImg) {
               checkArity(5, arguments, "crop");
               var x = checkReal(maybeX);
@@ -514,7 +605,7 @@ define([
               var img = checkImage(maybeImg);
               var line = image.makeLineImage(jsnums.toFixnum(x2 - x1), jsnums.toFixnum(y2 - y1), c, true);
 
-              var newScene = image.makeSceneImage(jsnums.toFixnum(img.getWidth()), 
+              var newScene = image.makeSceneImage(jsnums.toFixnum(img.getWidth()),
                                                   jsnums.toFixnum(img.getHeight()),
                                                   [],
                                                   true);
@@ -583,19 +674,26 @@ define([
               var sideA = checkNonNegativeReal(maybeSideA);
               var angleB = checkAngle(maybeAngleB);
               var sideC = checkNonNegativeReal(maybeSideC);
-              
+
               var sideB2 = cosRel(sideA, sideC, angleB);
               var sideB  = Math.sqrt(sideB2);
-              
+
               if (sideB2 <= 0) {
-                throwMessage("The given side, angle and side will not form a triangle: " 
+                throwMessage("The given side, angle and side will not form a triangle: "
                              + sideA + ", " + angleB + ", " + sideC);
               } else {
                 if (less(sideA + sideC, sideB) ||
                     less(sideB + sideC, sideA) ||
                     less(sideA + sideB, sideC)) {
-                  throwMessage("The given side, angle and side will not form a triangle: " 
+                  throwMessage("The given side, angle and side will not form a triangle: "
                                + sideA + ", " + angleB + ", " + sideC);
+                } else {
+                  if (less(sideA + sideC, sideB) ||
+                      less(sideB + sideC, sideA) ||
+                      less(sideA + sideB, sideC)) {
+                    throwMessage("The given side, angle and side will not form a triangle: " 
+                                 + sideA + ", " + angleB + ", " + sideC);
+                  }
                 }
               }
 
@@ -604,7 +702,7 @@ define([
               var mode = checkMode(maybeMode);
               var color = checkColor(maybeColor);
               return makeImage(
-                image.makeTriangleImage(jsnums.toFixnum(sideC), jsnums.toFixnum(angleA), jsnums.toFixnum(sideB), 
+                image.makeTriangleImage(jsnums.toFixnum(sideC), jsnums.toFixnum(angleA), jsnums.toFixnum(sideB),
                                         String(mode), color));
             }),
 
@@ -616,7 +714,7 @@ define([
               if (less(sideA + sideB, sideC) ||
                   less(sideC + sideB, sideA) ||
                   less(sideA + sideC, sideB)) {
-                throwMessage("The given sides will not form a triangle: " 
+                throwMessage("The given sides will not form a triangle: "
                              + sideA + ", " + sideB + ", " + sideC);
               }
 
@@ -625,7 +723,7 @@ define([
               var mode = checkMode(maybeMode);
               var color = checkColor(maybeColor);
               return makeImage(
-                image.makeTriangleImage(jsnums.toFixnum(sideC), jsnums.toFixnum(angleA), jsnums.toFixnum(sideB), 
+                image.makeTriangleImage(jsnums.toFixnum(sideC), jsnums.toFixnum(angleA), jsnums.toFixnum(sideB),
                                         String(mode), color));
             }),
 
@@ -635,13 +733,13 @@ define([
               var sideB = checkNonNegativeReal(maybeSideB);
               var sideC = checkNonNegativeReal(maybeSideC);
               if (less(180, angleA)) {
-                throwMessage("The given angle, side and side will not form a triangle: " 
+                throwMessage("The given angle, side and side will not form a triangle: "
                              + angleA + ", " + sideB + ", " + sideC);
               }
               var mode = checkMode(maybeMode);
               var color = checkColor(maybeColor);
               return makeImage(
-                image.makeTriangleImage(jsnums.toFixnum(sideC), jsnums.toFixnum(angleA), jsnums.toFixnum(sideB), 
+                image.makeTriangleImage(jsnums.toFixnum(sideC), jsnums.toFixnum(angleA), jsnums.toFixnum(sideB),
                                         String(mode), color));
             }),
 
@@ -651,20 +749,20 @@ define([
               var sideB  = checkNonNegativeReal(maybeSideB);
               var angleC = checkAngle(maybeAngleC);
               if (less(180, angleC)) {
-                throwMessage("The given side, side and angle will not form a triangle: " 
+                throwMessage("The given side, side and angle will not form a triangle: "
                              + sideA + ", " + sideB + ", " + angleC);
               }
               var sideC2 = cosRel(sideA, sideB, angleC);
               var sideC  = Math.sqrt(sideC2);
-              
+
               if (sideC2 <= 0) {
-                throwMessage("The given side, side and angle will not form a triangle: " 
+                throwMessage("The given side, side and angle will not form a triangle: "
                              + sideA + ", " + sideB + ", " + angleC);
               } else {
                 if (less(sideA + sideB, sideC) ||
                     less(sideC + sideB, sideA) ||
                     less(sideA + sideC, sideB)) {
-                  throwMessage("The given side, side and angle will not form a triangle: " 
+                  throwMessage("The given side, side and angle will not form a triangle: "
                                + sideA + ", " + sideB + ", " + angleC);
                 }
               }
@@ -674,7 +772,7 @@ define([
               var mode = checkMode(maybeMode);
               var color = checkColor(maybeColor);
               return makeImage(
-                image.makeTriangleImage(jsnums.toFixnum(sideC), jsnums.toFixnum(angleA), jsnums.toFixnum(sideB), 
+                image.makeTriangleImage(jsnums.toFixnum(sideC), jsnums.toFixnum(angleA), jsnums.toFixnum(sideB),
                                         String(mode), color));
             }),
 
@@ -687,13 +785,13 @@ define([
               var color = checkColor(maybeColor);
               var angleC = (180 - angleA - angleB);
               if (less(angleC, 0)) {
-                throwMessage("The given angle, angle and side will not form a triangle: " 
+                throwMessage("The given angle, angle and side will not form a triangle: "
                              + angleA + ", " + angleB + ", " + sideC);
               }
               var hypotenuse = sideC / (Math.sin(angleC*Math.PI/180))
               var sideB = hypotenuse * Math.sin(angleB*Math.PI/180);
               return makeImage(
-                image.makeTriangleImage(jsnums.toFixnum(sideC), jsnums.toFixnum(angleA), jsnums.toFixnum(sideB), 
+                image.makeTriangleImage(jsnums.toFixnum(sideC), jsnums.toFixnum(angleA), jsnums.toFixnum(sideB),
                                         String(mode), color));
             }),
 
@@ -706,13 +804,13 @@ define([
               var color = checkColor(maybeColor);
               var angleB = (180 - angleA - angleC);
               if (less(angleB, 0)) {
-                throwMessage("The given angle, side and angle will not form a triangle: " 
+                throwMessage("The given angle, side and angle will not form a triangle: "
                              + angleA + ", " + sideB + ", " + angleC);
               }
               var base = (sideB * Math.sin(angleA*Math.PI/180)) / (Math.sin(angleB*Math.PI/180));
               var sideC = (sideB * Math.sin(angleC*Math.PI/180)) / (Math.sin(angleB*Math.PI/180));
               return makeImage(
-                image.makeTriangleImage(jsnums.toFixnum(sideC), jsnums.toFixnum(angleA), jsnums.toFixnum(sideB), 
+                image.makeTriangleImage(jsnums.toFixnum(sideC), jsnums.toFixnum(angleA), jsnums.toFixnum(sideB),
                                         String(mode), color));
             }),
 
@@ -728,7 +826,7 @@ define([
               var sideC = hypotenuse * Math.sin(angleC*Math.PI/180);
               var sideB = hypotenuse * Math.sin(angleB*Math.PI/180);
               return makeImage(
-                image.makeTriangleImage(jsnums.toFixnum(sideC), jsnums.toFixnum(angleA), jsnums.toFixnum(sideB), 
+                image.makeTriangleImage(jsnums.toFixnum(sideC), jsnums.toFixnum(angleA), jsnums.toFixnum(sideB),
                                         String(mode), color));
             }),
 
@@ -754,7 +852,7 @@ define([
               var base = 2*side*Math.sin((angleC*Math.PI/180)/2);
               return makeImage(
                 // add 180 to make the triangle point up
-                image.makeTriangleImage(jsnums.toFixnum(base), jsnums.toFixnum(360-angleAB), jsnums.toFixnum(side), 
+                image.makeTriangleImage(jsnums.toFixnum(base), jsnums.toFixnum(360-angleAB), jsnums.toFixnum(side),
                                         String(mode), color));
             }),
 
@@ -838,7 +936,7 @@ define([
               var height = checkNatural(maybeHeight);
               return makeImage(image.colorListToImage(loc, width, height, 0, 0));
             }),
-            
+
             "image-width": f(function(maybeImg) {
               checkArity(1, arguments, "image-width");
               var img = checkImage(maybeImg);
@@ -851,21 +949,21 @@ define([
               return runtime.wrap(img.getHeight());
             }),
 
-            "image-baseline": f(function(maybeImg) {
-              checkArity(1, arguments, "image-baseline");
-              var img = checkImage(maybeImg);
-              return runtime.wrap(img.getBaseline());
-            }),
+              "image-baseline": f(function(maybeImg) {
+                checkArity(1, arguments, "image-baseline");
+                var img = checkImage(maybeImg);
+                return runtime.wrap(img.getBaseline());
+              }),
 
-            "name-to-color": f(function(maybeName) {
-              checkArity(1, arguments, "name-to-color");
-              var name = checkString(maybeName);
-              return runtime.wrap(colorDb.get(String(name)) || false);
-            })
+              "name-to-color": f(function(maybeName) {
+                checkArity(1, arguments, "name-to-color");
+                var name = checkString(maybeName);
+                return runtime.wrap(colorDb.get(String(name)) || false);
+              })
+            }),
           }),
-        }),
-        answer: runtime.namespace.get("nothing")
+          answer: runtime.namespace.get("nothing")
+        });
       });
-    });
-  } // end rt/ns fun
+    }); // end rt/ns fun
 });

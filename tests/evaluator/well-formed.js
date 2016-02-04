@@ -2,7 +2,7 @@ var r = require("requirejs")
 define(["js/runtime-anf", "./eval-matchers"], function(rtLib, e) {
 
   var _ = require('jasmine-node');
-  var rt;
+  var rt = rtLib.makeRuntime({ stdout: function(str) { process.stdout.write(str); } });
   var P;
 
   function wf_check(s) { 
@@ -11,7 +11,6 @@ define(["js/runtime-anf", "./eval-matchers"], function(rtLib, e) {
   function performTest() {
 
     beforeEach(function() {
-      rt = rtLib.makeRuntime({ stdout: function(str) { process.stdout.write(str); } });
       P =  e.makeEvalCheckers(this, rt);
     });
     describe("Well-formedness", function() {
@@ -26,8 +25,8 @@ define(["js/runtime-anf", "./eval-matchers"], function(rtLib, e) {
                        rt.makeNumber(10));
         // returns a number because we are really just checking OK parse/wf,
         // and this is (void) otherwise
-        P.checkEvalsTo("fun f(): nothing where: 5 + 2 is 7 end 42", rt.makeNumber(42));
-        P.checkEvalsTo("fun f(): nothing where: 1 is 2 end 10", rt.makeNumber(10));
+        P.checkEvalsTo("fun f(): nothing where: 5 + 2 is 7 end\n42", rt.makeNumber(42));
+        P.checkEvalsTo("fun f(): nothing where: 1 is 2 end\n10", rt.makeNumber(10));
 
         P.wait(done);
       });
@@ -46,17 +45,21 @@ define(["js/runtime-anf", "./eval-matchers"], function(rtLib, e) {
         P.wait(done);
       });
       it("multiple statements on a line", function(done) {
-        P.checkCompileErrorMsg("fun f(x): f x end", "Found two expressions on the same line");
-        P.checkCompileErrorMsg("fun f(x): f (x) end", "Found two expressions on the same line");
+        var msg =  "Found two expressions on the same line";
+        P.checkCompileErrorMsg("5-2", msg);
+        P.checkCompileErrorMsg("'ab''de'", msg);
+        P.checkCompileErrorMsg("a\"abc\"", msg);
+        P.checkCompileErrorMsg("a=3b=4", msg)
+        P.checkCompileErrorMsg("fun f(x): f x end", msg);
+        P.checkCompileErrorMsg("fun f(x): f (x) end",msg);
         P.checkEvalsTo("fun f(x): f\n (x) end\n10", rt.makeNumber(10));
         P.checkEvalsTo("fun f(x):\n  f\n  # a comment\n  (x)\nend\n10", rt.makeNumber(10));
         P.wait(done);
       });
       it("anonymous bindings", function(done) {
-        P.checkCompileErrorMsg("var _ = 5", "anonymous mutable variable");
-        P.checkCompileErrorMsg("shadow _ = 5", "can't actually shadow");
-        P.checkCompileErrorMsg("graph: _ = BOS\nBOS = 5\nend", "graph expressions");
-        P.checkCompileErrorMsg("{a : 5, a(self): 'bad' end}", "a is declared twice");
+        P.checkCompileErrorMsg("var _ = 5", "there is no name to modify");
+        P.checkCompileErrorMsg("shadow _ = 5", "there is no name to shadow");
+        P.checkCompileErrorMsg("{a : 5, a(self): 'bad' end}", "defined the field name `a` twice");
         P.wait(done);
       });
       it("malformed check-tests", function(done) {
@@ -138,34 +141,11 @@ define(["js/runtime-anf", "./eval-matchers"], function(rtLib, e) {
                                "  42\n" +
                                "end",
                                "top level");
-        P.checkCompileErrorMsg("lam():\n" + 
-                               "  y = 10\n" + 
-                               "  x = 5\n" + 
-                               "  fun f(): nothing end\n" + 
-                               "  graph:\n" + 
-                               "  z = 5\n" + 
-                               "  end\n" + 
-                               "end",
-                               "Cannot end a block");
-        P.checkCompileErrorMsg("lam():\n" + 
-                               "  y = 10\n" + 
-                               "  x = 5\n" + 
-                               "  fun f(): nothing end\n" + 
-                               "  ref-graph:\n" + 
-                               "  z = 5\n" + 
-                               "  end\n" + 
-                               "end",
-                               "end a block with a graph");
         P.checkCompileErrorMsg("block:\n" + 
                                "  x = 5\n" + 
                                "  y = 10\n" + 
                                "end",
                                "Cannot end a block in a let-binding");
-        P.checkCompileErrorMsg("block:\n" + 
-                               "  x = 5\n" + 
-                               "  graph: y = 10 end\n" + 
-                               "end",
-                               "Cannot end a block");
         P.checkCompileErrorMsg("if x < y:\n" + 
                                "  print('x less than y')\n" + 
                                "end",
@@ -311,7 +291,7 @@ define(["js/runtime-anf", "./eval-matchers"], function(rtLib, e) {
           "with"
         ];
         for(var i = 0; i < reservedNames.length; i++) {
-          var err = "cannot use " + reservedNames[i] + " as an identifier";
+          var err = "disallows the use of `" + reservedNames[i] + "` as an identifier";
           P.checkCompileErrorMsg(reservedNames[i], err);
           P.checkCompileErrorMsg(reservedNames[i] + " = 5", err);
           P.checkCompileErrorMsg("fun f(" + reservedNames[i] + "): 5 end", err);
@@ -332,7 +312,7 @@ define(["js/runtime-anf", "./eval-matchers"], function(rtLib, e) {
         P.checkCompileErrorMsg("0/00000", err);
         P.wait(done);
       });
-      it("special imports", function(done) {
+      xit("special imports", function(done) {
         var err = "Unsupported import type";
         P.checkCompileErrorMsg("import mydrive('foo') as D", err);
         P.checkNoCompileError("import my-gdrive('foo') as F");
@@ -340,20 +320,23 @@ define(["js/runtime-anf", "./eval-matchers"], function(rtLib, e) {
         P.checkCompileErrorMsg("import shared-gdrive('a') as D", "two arguments");
         P.wait(done);
       });
+      it("examples restriction", function(done) {
+        P.checkCompileErrorMsg("examples: f() end", "must contain only test");
+        P.wait(done);
+      });
       it("underscores", function(done) {
-        P.checkCompileErrorMsg("cases(List) _: | empty => 5 end", "Cannot use underscore");
-        P.checkCompileErrorMsg("cases(List) _: | empty => 5 | else => 6 end", "Cannot use underscore");
-        P.checkCompileErrorMsg("cases(List) empty: | empty => _ end", "Cannot use underscore");
+        P.checkCompileErrorMsg("cases(List) _: | empty => 5 end", "Underscore used as");
+        P.checkCompileErrorMsg("cases(List) _: | empty => 5 | else => 6 end", "Underscore used as");
+        P.checkCompileErrorMsg("cases(List) empty: | empty => _ end", "Underscore used as");
         P.checkCompileErrorMsg("cases(List) empty: | _ => 5 end", "Found a cases branch using _");
-        P.checkCompileErrorMsg("block:\n _ \n 5 \n end", "Cannot use underscore");
-        P.checkCompileErrorMsg("{ foo(self): _ end }", "Cannot use underscore");
-        P.checkCompileErrorMsg("{ fieldname: _ }", "Cannot use underscore");
-        P.checkCompileErrorMsg("{ ref fieldname: _ }", "Cannot use underscore");
-        P.checkCompileErrorMsg("method(self): _ end", "Cannot use underscore");
-        P.checkCompileErrorMsg("lam(self): _ end", "Cannot use underscore");
-        P.checkCompileErrorMsg("fun foo(self): _ end", "Cannot use underscore");
-        P.checkCompileErrorMsg("check: _ end", "Cannot use underscore");
-        P.checkCompileErrorMsg("provide _ end", "Cannot use underscore");
+        P.checkCompileErrorMsg("block:\n _ \n 5 \n end", "Underscore used as");
+        P.checkCompileErrorMsg("{ foo(self): _ end }", "Underscore used as");
+        P.checkCompileErrorMsg("{ fieldname: _ }", "Underscore used as");
+        P.checkCompileErrorMsg("method(self): _ end", "Underscore used as");
+        P.checkCompileErrorMsg("lam(self): _ end", "Underscore used as");
+        P.checkCompileErrorMsg("fun foo(self): _ end", "Underscore used as");
+        P.checkCompileErrorMsg("check: _ end", "Underscore used as");
+        P.checkCompileErrorMsg("provide _ end", "Underscore used as");
         P.wait(done);
       });
     });

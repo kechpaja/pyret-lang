@@ -2,6 +2,7 @@
 
 import cmdline as C
 import parse-pyret as P
+import string-dict as SD
 import "compiler/desugar.arr" as D
 import "compiler/desugar-check.arr" as DC
 import ast as A
@@ -15,21 +16,28 @@ import "compiler/js-of-pyret.arr" as JS
 import "compiler/desugar-check.arr" as CH
 import file as F
 
-options = {
-  width: C.next-val-default(C.Number, 80, some("w"), C.once, "Pretty-printed width"),
-  dialect: C.next-val-default(C.String, "Pyret", some("d"), C.once, "Dialect to use"),
-  standard-builtins: C.flag(C.once, "Use standard buildins instead of minimal builtins"),
-  check-mode: C.flag(C.once, "Compile code with check-mode enabled"),
-  type-check: C.flag(C.once, "Type check code")
-}
+options = [SD.string-dict:
+  "width",
+    C.next-val-default(C.Number, 80, some("w"), C.once, "Pretty-printed width"),
+  "standard-builtins",
+    C.flag(C.once, "Use standard buildins instead of minimal builtins"),
+  "check-mode",
+    C.flag(C.once, "Compile code with check-mode enabled"),
+  "type-check",
+    C.flag(C.once, "Type check code")
+]
 
 parsed-options = C.parse-cmdline(options)
 
 cases (C.ParsedArguments) parsed-options:
   | success(opts, rest) =>
-    print-width = opts.get("width")
-    dialect = opts.get("dialect")
-    libs = if opts.has-key("standard-builtins"): CS.standard-builtins else: CS.minimal-builtins end
+    print-width = opts.get-value("width")
+    libs =
+      if opts.has-key("standard-builtins"):
+        CS.standard-imports
+      else:
+        CS.minimal-imports
+      end
     check-mode = opts.has-key("check-mode")
     type-check = opts.has-key("type-check")
     print("Success")
@@ -40,8 +48,14 @@ cases (C.ParsedArguments) parsed-options:
         file-contents = F.file-to-string(file)
         print("")
 
-        comp = CM.compile-js(CM.start, dialect, file-contents, file, libs,
-          {check-mode: check-mode, collect-all: true, ignore-unbound: true, type-check: type-check}).tolist()
+        comp = CM.compile-js(CM.start, file-contents, file, CS.standard-builtins, libs,
+          {
+            check-mode: check-mode,
+            collect-all: true,
+            ignore-unbound: true,
+            type-check: type-check,
+            proper-tail-calls: true
+          }).tolist()
 
         for each(phase from comp):
           print(">>>>>>>>>>>>>>>>>>")

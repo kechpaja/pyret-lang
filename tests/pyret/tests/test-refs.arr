@@ -14,6 +14,17 @@ check "basic boxes":
   (b2 == b1) is false
 end
 
+check "cyclic printing":
+  torepr(box(5)) is "box(5)"
+  b = box("dummy")
+  b!{v : b}
+  torepr(b) is "box(<cyclic-object-1>)"
+
+  b2 = box("dummy")
+  ref-set(b2.v, b2.v)
+  torepr(b2) is "box(<cyclic-ref-1>)"
+end
+
 check "alternative lookups":
   b = box(5)
   ref-get(b.v) is 5
@@ -88,27 +99,3 @@ check "extend errors":
   m.{ v1: "new" } raises "update"
 end
 
-check "printint uninitialized references":
-
-  ref-graph:
-    x = torepr(x)
-  end
-  ref-get(x) is "<uninitialized reference>"
-
-end
-
-check "errors on ref construction in other contexts":
-
-  ref-graph:
-    r = r
-  end
-  link(1, r) raises "List"
-
-  fun f():
-    ref-graph:
-      l = link(1, l)
-    end
-    l
-  end
-  f() raises "List"
-end

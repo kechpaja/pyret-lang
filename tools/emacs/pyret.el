@@ -41,6 +41,22 @@
     (define-key map (kbd "=") 'pyret-indent-initial-punctuation)
     (define-key map (kbd "<") 'pyret-indent-initial-punctuation)
     (define-key map (kbd ">") 'pyret-indent-initial-punctuation)
+    (define-key map (kbd "s") 'pyret-indent-initial-punctuation)
+    (define-key map (kbd "e") 'pyret-indent-initial-punctuation)
+    (define-key map (kbd "n") 'pyret-indent-initial-punctuation)
+    (define-key map (kbd ".") 'pyret-indent-initial-punctuation)
+    (define-key map (kbd "^") 'pyret-indent-initial-punctuation)
+    (define-key map (kbd "`")
+      (function (lambda (&optional N)
+                  (interactive "^p")
+                  (message "Got here")
+                  (or N (setq N 1))
+                  (self-insert-command N)
+                  (ignore-errors
+                    (when (and (not (pyret-in-string))
+                               (save-excursion (forward-char -3) (looking-at "```"))
+                               (not (looking-at "```")))
+                      (save-excursion (self-insert-command 3)))))))
     (define-key map (kbd "d")
       (function (lambda (&optional N)
                   (interactive "^p")
@@ -64,7 +80,8 @@
                   (or N (setq N 1))
                   (self-insert-command N)
                   (ignore-errors
-                    (when (save-excursion (forward-char -6) (pyret-EXCEPT))
+                    (when (or (save-excursion (forward-char -6) (pyret-EXCEPT))
+                              (save-excursion (forward-char -6) (pyret-IS-NOT)))
                       (pyret-smart-tab))))))
     (define-key map (kbd ":")
       (function (lambda (&optional N)
@@ -86,18 +103,21 @@
   "Keymap for Pyret major mode")
 
 (defconst pyret-ident-regex "[a-zA-Z_][a-zA-Z0-9$_\\-]*")
+(defconst pyret-keywords-test
+  '("is==" "is=~" "is<=>" "is-not==" "is-not=~" "is-not<=>"))
 (defconst pyret-keywords
-   '("fun" "lam" "method" "var" "when" "import" "provide" "type" "newtype" "check"
-     "data" "end" "except" "for" "from" "cases" "shadow" "let" "letrec"
+   '("fun" "lam" "method" "var" "when" "include" "import" "provide" "type" "newtype" "check"
+     "data" "end" "except" "for" "from" "cases" "shadow" "let" "letrec" "rec" "ref"
      "and" "or" "is" "raises" "satisfies" "violates" "mutable" "cyclic" "lazy"
      "as" "if" "else" "deriving"))
 (defconst pyret-keywords-hyphen
-  '("provide-types" "type-let" "is-not" "raises-other-than"
+  '("provide-types" "type-let" 
+    "is-not" "raises-other-than"
     "does-not-raise" "raises-satisfies" "raises-violates"))
 (defconst pyret-keywords-colon
    '("doc" "try" "with" "then" "else" "sharing" "where" "case" "graph" "block" "ask" "otherwise"))
 (defconst pyret-keywords-percent
-   '("is"))
+   '("is" "is-not"))
 (defconst pyret-paragraph-starters
   '("|" "fun" "lam" "cases" "data" "for" "sharing" "try" "except" "when" "check" "ask:"))
 
@@ -105,7 +125,15 @@
   (regexp-opt '(":" "::" "=>" "->" "<" ">" "<=" ">=" "," "^" "(" ")" "[" "]" "{" "}" 
                 "." "!" "\\" "|" "=" "==" "<>" "+" "%" "*" "/"))) ;; NOTE: No hyphen by itself
 (defconst pyret-initial-operator-regex
-  (concat "^[ \t]*\\_<" (regexp-opt '("-" "+" "*" "/" "<" "<=" ">" ">=" "==" "<>" "." "!" "^" "is" "satisfies" "raises")) "\\_>"))
+  (concat "^[ \t]*\\(?:\\_<"
+          (regexp-opt '("-" "+" "*" "/" "<" "<=" ">" ">=" "==" "<>"
+                        "is" "is%" "is==" "is=~" "is<=>" 
+                        "is-not" "is-not%" "is-not==" "is-not=~" "is-not<=>"
+                        "satisfies" "violates" "raises" "raises-other-than"
+                        "does-not-raise" "raises-satisfies" "raises-violates"))
+          "\\_>\\|" 
+          (regexp-opt '("." "!" "^")) 
+          "\\)"))
 (defconst pyret-ws-regex "\\(?:[ \t\n]\\|#.*?\n\\)")
 
 
@@ -132,13 +160,14 @@
 
 (defun pyret-recompute-lexical-regexes ()
   (defconst pyret-keywords-regex (regexp-opt pyret-keywords))
+  (defconst pyret-keywords-test-regex (regexp-opt pyret-keywords-test))
   (defconst pyret-keywords-hyphen-regex (regexp-opt pyret-keywords-hyphen))
   (defconst pyret-keywords-colon-regex (regexp-opt pyret-keywords-colon))
   (defconst pyret-keywords-percent-regex (regexp-opt pyret-keywords-percent))
   (defconst pyret-font-lock-keywords-1
     (list
-     ";"
-     `("\\(```[^`]\\(?:\\\\[`\\\\]\\|[^`\\\\]\\|`[^`]\\|``[^`]\\)*```\\)" 
+     `(";" . font-lock-keyword-face)
+     `("\\(```\\(?:\\\\[`\\]\\|[^`\\]\\|``?[^`]\\)*?```\\)" 
        (1 '(face font-lock-string-face font-lock-multiline t) t))
      `(,(concat 
          "\\(^\\|[ \t]\\|" pyret-punctuation-regex "\\)\\("
@@ -152,8 +181,13 @@
        (1 font-lock-builtin-face) (2 font-lock-keyword-face) (3 font-lock-builtin-face))
      `(,(concat 
          "\\(^\\|[ \t]\\|" pyret-punctuation-regex "\\)\\("
+         pyret-keywords-test-regex
+         "\\)[^%]") 
+       (1 font-lock-builtin-face) (2 font-lock-keyword-face))
+     `(,(concat 
+         "\\(^\\|[ \t]\\|" pyret-punctuation-regex "\\)\\("
          pyret-keywords-hyphen-regex
-         "\\)")
+         "\\)\\_>")
        (1 font-lock-builtin-face) (2 font-lock-keyword-face))
      `(,(concat 
          "\\(^\\|[ \t]\\|" pyret-punctuation-regex "\\)\\("
@@ -168,7 +202,7 @@
      `(,(concat 
          "\\(^\\|[ \t]\\|" pyret-punctuation-regex "\\)\\("
          pyret-keywords-regex
-         "\\)\\b")
+         "\\)\\_>")
        (1 font-lock-builtin-face) (2 font-lock-keyword-face))
      `(,pyret-punctuation-regex . font-lock-builtin-face)
      `(,(concat "\\_<" (regexp-opt '("true" "false") t) "\\_>") . font-lock-constant-face)
@@ -208,6 +242,7 @@
         (1 font-lock-builtin-face) (2 font-lock-type-face))
       `(,(regexp-opt '("<" ">")) . font-lock-builtin-face)
       `(,(concat "\\(" pyret-ident-regex "\\)[ \t]*\\((\\)")  (1 font-lock-function-name-face))
+      `(,(concat "\\(" pyret-ident-regex "\\)[ \t]*\\(<.*?>\\)\\((\\)")  (1 font-lock-function-name-face))
       `(,pyret-ident-regex . font-lock-variable-name-face)
       '("-" . font-lock-builtin-face)
       ))
@@ -221,7 +256,8 @@
   (let ((st (make-syntax-table)))
     (modify-syntax-entry ?_ "w" st)
     (modify-syntax-entry ?$ "w" st)
-    (modify-syntax-entry ?# "< b" st)
+    (modify-syntax-entry ?# "< 14b" st)
+    (modify-syntax-entry ?| ". 23n" st)
     (modify-syntax-entry ?\n "> b" st)
     (modify-syntax-entry ?: "." st)
     (modify-syntax-entry ?^ "." st)
@@ -233,7 +269,7 @@
     (modify-syntax-entry ?} "){" st)
     (modify-syntax-entry ?. "." st)
     (modify-syntax-entry ?\; "." st)
-    (modify-syntax-entry ?` "\"" st)
+    ;(modify-syntax-entry ?` "\"" st)
     st)
   "Syntax table for pyret-mode")
 
@@ -264,6 +300,13 @@
 
 (defsubst pyret-in-string ()
   (equal (get-text-property (point) 'face) 'font-lock-string-face))
+(defun pyret-in-long-string ()
+  (and (pyret-in-string)
+       (save-excursion
+         (goto-char (previous-single-property-change (point) 'face))
+         (pyret-in-string))))
+(defsubst pyret-in-comment ()
+  (equal (get-text-property (point) 'face) 'font-lock-comment-face))
 (defsubst pyret-keyword (s) 
   (if (or (pyret-is-word (preceding-char))
           (pyret-in-string)) nil
@@ -281,12 +324,14 @@
           t))))))
 (defsubst pyret-char (c)
   (and (= (char-after) c)
-       (not (pyret-in-string))))
+       (not (pyret-in-string))
+       (not (pyret-in-comment))))
       
 (defsubst pyret-FUN () (pyret-keyword "fun"))
 (defsubst pyret-LAM () (pyret-keyword "lam"))
 (defsubst pyret-METHOD () (pyret-keyword "method"))
 (defsubst pyret-VAR () (pyret-keyword "var"))
+(defsubst pyret-REC () (pyret-keyword "rec"))
 (defsubst pyret-LET () (pyret-keyword "let"))
 (defsubst pyret-LETREC () (pyret-keyword "letrec"))
 (defsubst pyret-CASES () (pyret-keyword "cases"))
@@ -294,9 +339,19 @@
 (defsubst pyret-ASKCOLON () (pyret-keyword "ask:"))
 (defsubst pyret-THEN () () (pyret-keyword "then:"))
 (defsubst pyret-IF () (pyret-keyword "if"))
+(defsubst pyret-IS () (pyret-keyword "is"))
+(defsubst pyret-IS-NOT () (pyret-keyword "is-not"))
+(defsubst pyret-SATISFIES () (pyret-keyword "satisfies"))
+(defsubst pyret-VIOLATES () (pyret-keyword "violates"))
+(defsubst pyret-RAISES () (pyret-keyword "raises"))
+(defsubst pyret-RAISES-OTHER-THAN () (pyret-keyword "raises-other-than"))
+(defsubst pyret-DOES-NOT-RAISE () (pyret-keyword "does-not-raise"))
+(defsubst pyret-RAISES-SATISFIES () (pyret-keyword "raises-satisfies"))
+(defsubst pyret-RAISES-VIOLATES () (pyret-keyword "raises-VIOLATES"))
 (defsubst pyret-ELSEIF () (pyret-keyword "else if"))
 (defsubst pyret-ELSE () (pyret-keyword "else:"))
 (defsubst pyret-OTHERWISE () (pyret-keyword "otherwise:"))
+(defsubst pyret-INCLUDE () (pyret-keyword "include"))
 (defsubst pyret-IMPORT () (pyret-keyword "import"))
 (defsubst pyret-PROVIDE () (pyret-keyword "provide"))
 (defsubst pyret-DATA () (pyret-keyword "data"))
@@ -326,6 +381,7 @@
 (defsubst pyret-LPAREN () (pyret-char ?())
 (defsubst pyret-RPAREN () (pyret-char ?)))
 (defsubst pyret-EQUALS () (and (not (pyret-in-string)) (looking-at "=[^>]")))
+(defsubst pyret-BLOCK-COMMENT () (and (not (pyret-in-string)) (looking-at "[ \t]*#|")))
 (defsubst pyret-COMMENT () (and (not (pyret-in-string)) (looking-at "[ \t]*#.*$")))
 
 (defun pyret-has-top (stack top)
@@ -336,10 +392,11 @@
 
 (defstruct
   (pyret-indent
-   (:constructor pyret-make-indent (fun cases data shared try except graph parens object vars fields initial-period))
+   (:constructor pyret-make-indent 
+                 (fun cases data shared try except graph parens object 
+                  vars fields initial-period block-comment-depth))
    :named)
-   fun cases data shared try except graph parens object vars fields initial-period)
-
+   fun cases data shared try except graph parens object vars fields initial-period block-comment-depth)
 (defun pyret-map-indent (f total delta)
   (let* ((len (length total))
          (ret (make-vector len nil))
@@ -362,7 +419,7 @@
       (incf sum (aref total i))
       (incf i))
     sum))
-(defun pyret-make-zero-indent () (pyret-make-indent 0 0 0 0 0 0 0 0 0 0 0 0))
+(defun pyret-make-zero-indent () (pyret-make-indent 0 0 0 0 0 0 0 0 0 0 0 0 0))
 (defun pyret-zero-indent! (ind)
   (let ((i 1)
         (len (length ind)))
@@ -378,7 +435,7 @@
 
 (defun pyret-print-indent (ind)
   (format
-   "Fun %d, Cases %d, Data %d, Shared %d, Try %d, Except %d, Graph %s, Parens %d, Object %d, Vars %d, Fields %d, Period %d"
+   "Fun %d, Cases %d, Data %d, Shared %d, Try %d, Except %d, Graph %s, Parens %d, Object %d, Vars %d, Fields %d, Period %d, Block comment depth %d"
    (pyret-indent-fun ind)
    (pyret-indent-cases ind)
    (pyret-indent-data ind)
@@ -390,7 +447,8 @@
    (pyret-indent-object ind)
    (pyret-indent-vars ind)
    (pyret-indent-fields ind)
-   (pyret-indent-initial-period ind)))
+   (pyret-indent-initial-period ind)
+   (pyret-indent-block-comment-depth ind)))
 
 (defun pyret-make-zero-vector (length)
   (let ((v (make-vector length nil))
@@ -467,6 +525,30 @@
         ;;(message "At start of line %d, open is %s" (+ n 1) open)
         (while (not (eolp))
           (cond
+           ((or (> (pyret-indent-block-comment-depth cur-opened) 0)
+                (> (pyret-indent-block-comment-depth defered-opened) 0)
+                (> (pyret-indent-block-comment-depth open) 0))
+            (cond
+             ((looking-at ".*|#")
+              (cond
+               ((> (pyret-indent-block-comment-depth cur-opened) 0) 
+                (decf (pyret-indent-block-comment-depth cur-opened)))
+               ((> (pyret-indent-block-comment-depth defered-opened) 0)
+                (decf (pyret-indent-block-comment-depth defered-opened)))
+               ((looking-at "[ \t]*|#")
+                (incf (pyret-indent-block-comment-depth cur-closed)))
+               (t 
+                (incf (pyret-indent-block-comment-depth defered-closed))))
+              (goto-char (match-end 0)))
+             ((pyret-BLOCK-COMMENT)
+              (incf (pyret-indent-block-comment-depth defered-opened))
+              (goto-char (match-end 0)))
+             (t
+              (end-of-line)))
+            )
+           ((pyret-BLOCK-COMMENT)
+            (incf (pyret-indent-block-comment-depth defered-opened))
+            (goto-char (match-end 0)))
            ((pyret-COMMENT)
             (end-of-line))
            ((and (looking-at "[^ \t]") (pyret-has-top opens '(needsomething)))
@@ -520,7 +602,7 @@
               (push 'var opens)
               (push 'needsomething opens)))
             (forward-char))
-           ((pyret-VAR)
+           ((or (pyret-VAR) (pyret-REC))
             ;;(message "Line %d, Seen var, current text is '%s', and opens is %s, incrementing defered-opened-vars" (1+ n) (buffer-substring (point) (min (point-max) (+ 10 (point)))) opens)
             (incf (pyret-indent-vars defered-opened))
             (push 'var opens)
@@ -925,7 +1007,7 @@
         (message "Open %4d: %s" i (pyret-print-indent defered))
         ))))
 
-(defconst pyret-indent-widths (pyret-make-indent 1 2 2 1 1 1 0 1 1 1 1 1)) ;; NOTE: 0 = indent for graphs
+(defconst pyret-indent-widths (pyret-make-indent 1 2 2 1 1 1 0 1 1 1 1 1 1.5)) ;; NOTE: 0 = indent for graphs
 (defun pyret-indent-line ()
   "Indent current line as Pyret code"
   (interactive)
@@ -934,11 +1016,20 @@
          (total-indent (pyret-sum-indents (pyret-mul-indent indents pyret-indent-widths))))
     (save-excursion
       (beginning-of-line)
-      (if (looking-at "^[ \t]*[|]")
-          (if (> total-indent 0)
-              (indent-line-to (* tab-width (- total-indent 1)))
-            (indent-line-to 0))
-        (indent-line-to (max 0 (* tab-width total-indent)))))
+      (cond
+       ((pyret-in-long-string)
+        (if (= 0 (current-indentation))
+            (let ((col-start (save-excursion (re-search-backward "```" nil t) (current-column))))
+              (indent-line-to col-start))))
+       ((or (= 0 (pyret-indent-block-comment-depth indents))
+            (= 0 (current-indentation)))
+        (if (and (looking-at "^[ \t]*[|]\\($\\|\n\\|[^#]\\)")
+                 (not (pyret-in-string)) (not (pyret-in-comment)))
+            (if (> total-indent 0)
+                (indent-line-to (truncate (* tab-width (- total-indent 1))))
+              (indent-line-to 0))
+          (indent-line-to (max 0 (truncate (* tab-width total-indent))))))
+       (t nil)))
     (if (< (current-column) (current-indentation))
         (forward-char (- (current-indentation) (current-column))))
     ))
@@ -956,9 +1047,20 @@
       (while (<= n line-max)
         (let* ((indents (aref pyret-nestings-at-line-start (min (- n 1) (length pyret-nestings-at-line-start))))
                (total-indent (pyret-sum-indents (pyret-mul-indent indents pyret-indent-widths))))
-          (if (looking-at "^[ \t]*[|]")
-              (aset indent-widths (- n line-min) (max 0 (* tab-width (- total-indent 1))))
-            (aset indent-widths (- n line-min) (max 0 (* tab-width total-indent)))))
+          (cond
+           ((pyret-in-long-string)
+            (if (= 0 (current-indentation))
+                (let ((col-start (save-excursion (re-search-backward "```" nil t) (current-column))))
+                  (aset indent-widths (- n line-min) col-start))
+              (aset indent-widths (- n line-min) (current-indentation))))
+           ((or (= 0 (pyret-indent-block-comment-depth indents))
+                (= 0 (current-indentation)))
+            (if (and (looking-at "^[ \t]*[|]\\($\\|\n\\|[^#]\\)")
+                     (not (pyret-in-string)) (not (pyret-in-comment)))
+                (aset indent-widths (- n line-min) (max 0 (truncate (* tab-width (- total-indent 1)))))
+              (aset indent-widths (- n line-min) (max 0 (truncate (* tab-width total-indent))))))
+           (t 
+            (aset indent-widths (- n line-min) (current-indentation)))))
         (incf n)
         (forward-line))
       (setq n line-min) (goto-char start) (beginning-of-line)
@@ -979,6 +1081,82 @@ For detail, see `comment-dwim'."
   (let ((comment-start "#") (comment-end ""))
     (comment-dwim arg)))
 
+
+;;; ADAPTED FROM http://sourceforge.net/p/python-mode/patches/26/
+;; Syntactic keywords.  This syntactic keyword table allows
+;; pyret-mode to handle triple-quoted strings (almost) correctly.
+
+(defvar pyret-font-lock-syntactic-keywords
+  '((pyret-quote-in-triple-quoted-string-matcher 0 (1 . nil))
+    )
+  "Syntactic keyword table for Pyret, which finds quote marks that
+should not be considered string delimiters because they are inside
+triple-quoted strings, and marks them as punctuation instead.")
+
+(defun pyret-quote-in-triple-quoted-string-matcher (limit)
+  "A `font-lock-mode' MATCHER that searches for quote marks (\" or \' or \`)
+that should not be considered string delimiters because they are
+inside triple-quoted strings.
+    It also marks all quote marks it encounters with the text-property
+`pyret-strtype', indicating what sort of string begins immediately after
+that quote mark.  For open-quote marks, the value is one of:
+\"```\", \"\\\"\", \"\\'\".  For close-quote
+marks, the value is nil.  For backslashed quotes, quotes in comments,
+and non-triple-quotes inside triple-quoted- strings, the value is the
+quote mark that opened the string."
+  (let (result strtype)
+    ;; Find a known starting place & state.
+    (cond ((= (point) (car pyret-strtype-cache))
+           (setq strtype (cdr pyret-strtype-cache)))
+          ((re-search-backward "[`\"\']" nil t)
+           (setq strtype (get-text-property (point) 'pyret-strtype))
+           (forward-char 1))
+          (t nil))
+    ;; Scan forward looking for string-internal quotes.
+    (while (not result)
+      ;; Find the next token.
+      (if (re-search-forward "[`\"\'\\#]" limit t)
+          (let ((start (match-beginning 0))
+                (tok (char-before)))
+            ;;(mydebug "%s@%s [in %s]" tok start strtype)
+            (cond
+             ;; Backslashed char: move over it.
+             ((eq tok ?\\) (forward-char 1))
+             ;; Comment marker: go to eol unless we're in a string.
+             ((eq tok ?\#) (unless strtype (end-of-line)))
+             ;; Close quote: set strtype to nil.
+             ((and strtype (save-excursion (backward-char 1)
+                                           (looking-at strtype)))
+              (setq strtype nil) (goto-char (match-end 0)))
+             ;; String-internal quote: mark it as normal (non-
+             ;; quoting) punctuation.
+             (strtype (if (and (member strtype '("```"))
+                               (eq tok (elt strtype 0)))
+                          (setq result 'found-one)))
+             ;; Open quote: set strtype.
+             (t (backward-char 1)
+                (if (re-search-forward "```\\|\"\\|\'" limit t)
+                    (setq strtype (match-string 0))
+                  (forward-char 1))))
+            ;; Save strtype for future reference.
+            (put-text-property start (point) 'pyret-strtype strtype))
+        ;; No tokens left
+        (setq result 'reached-limit)))
+    (setq pyret-strtype-cache (cons (point) strtype))
+    (eq result 'found-one)))
+
+(defvar pyret-strtype-cache '(-1 . nil)
+  "Cached value indicating what kind of string we're in (if any).
+Encoded as a tuple (POS . STRTYPE).  POS is a buffer position --
+only use the cache if you're still at that position.  STRTYPE is
+one of: \"```\", \"\\\"\", \"\\'\", or nil,
+indicating what open quote was used for the string we're currently
+in (nil if we're not in a string).")
+
+;; Don't let the 'pyret-strtype' property spread to other characters.
+(when (boundp 'text-property-default-nonsticky)
+  (add-to-list 'text-property-default-nonsticky '(pyret-strtype . t)))
+
 (defun pyret-mode ()
   "Major mode for editing Pyret files"
   (interactive)
@@ -989,6 +1167,7 @@ For detail, see `comment-dwim'."
   (pyret-recompute-lexical-regexes)
   (set (make-local-variable 'pyret-dialect) 'Pyret)
   (set (make-local-variable 'font-lock-defaults) '(pyret-font-lock-keywords))
+  (set (make-local-variable 'font-lock-syntactic-keywords) pyret-font-lock-syntactic-keywords)
   (font-lock-refresh-defaults)
   (set (make-local-variable 'comment-start) "#")
   (set (make-local-variable 'comment-end) "")

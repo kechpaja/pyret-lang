@@ -12,18 +12,18 @@ PHASE0           = build/phase0
 PHASE1           = build/phase1
 PHASE2           = build/phase2
 PHASE3           = build/phase3
-WEB              = build/web
 RELEASE_DIR      = build/release
 DOCS             = docs
 
 # CUSTOMIZE THESE IF NECESSARY
-SRC_JS          := $(patsubst %.arr,%.arr.js,$(wildcard src/$(COMPILER)/*.arr))
+SRC_JS          := $(patsubst %.arr,%.arr.js,$(wildcard src/$(COMPILER)/*.arr))\
+ $(patsubst %.arr,%.arr.js,$(wildcard src/$(COMPILER)/locators/*.arr))
 ROOT_LIBS        = $(patsubst src/arr/base/%.arr,src/trove/%.js,$(wildcard src/$(BASE)/*.arr))
 LIBS_JS         := $(patsubst src/arr/trove/%.arr,src/trove/%.js,$(wildcard src/$(TROVE)/*.arr)) # deliberately .js suffix
 PARSERS         := $(patsubst src/js/base/%-grammar.bnf,src/js/%-parser.js,$(wildcard src/$(JSBASE)/*-grammar.bnf))
 
 # You can download the script to work with s3 here:
-# 
+#
 #     http://aws.amazon.com/code/Amazon-S3/1710
 #
 # On Debian, you need the following packages:
@@ -66,7 +66,6 @@ DOCS_DIRS       := $(sort $(dir $(DOCS_DEPS)) $(dir $(DOCS_SKEL_DEPS)))
 # NOTE: Needs TWO blank lines here, dunno why
 define \n
 
-
 endef
 ifneq ($(findstring .exe,$(SHELL)),)
 	override SHELL:=$(COMSPEC)$(ComSpec)
@@ -79,17 +78,6 @@ else
 	RM = rm -f $1
 	VERSION = $(shell git describe --long --tags HEAD | awk -F '[/-]' '{ print $$1 "r" $$2 }')
 endif
-
-WEB_DEPS = \
- node_modules/requirejs/require.js \
- src/web/playground.html \
- lib/CodeMirror/lib/codemirror.css \
- lib/CodeMirror/lib/codemirror.js \
- lib/CodeMirror/mode/pyret.js \
- img/pyret-banner.png
-
-
-WEB_TARGETS = $(addprefix build/web/,$(notdir $(WEB_DEPS)))
 
 -include config.mk
 
@@ -116,7 +104,6 @@ phase3: $(PHASE3)/phase3.built
 $(PHASE3)/phase3.built: $(PYRET_COMP) $(PHASE3_ALL_DEPS) $(patsubst src/%,$(PHASE3)/%,$(PARSERS)) $(PHASE3)/pyret-start.js $(PHASE3)/main-wrapper.js
 	touch $(PHASE3)/phase3.built
 
-
 $(PHASE1_ALL_DEPS): | $(PHASE1)
 
 $(PHASE2_ALL_DEPS): | $(PHASE2) phase1
@@ -132,24 +119,6 @@ standalone2: phase2 $(PHASE2)/pyret.js
 .PHONY : standalone3
 standalone3: phase3 $(PHASE3)/pyret.js
 
-.PHONY : web
-web: $(WEB_TARGETS) $(WEB)/web-compile.js
-
-$(WEB_TARGETS): | $(WEB)
-
-$(WEB):
-	@$(call MKDIR,$(WEB))
-$(WEB)/%: lib/CodeMirror/%
-	cp $< $@
-$(WEB)/%: src/web/%
-	cp $< $@
-$(WEB)/%: img/%
-	cp $< $@
-
-$(WEB)/web-compile.js: $(PHASE2_ALL_DEPS) $(patsubst src/%,$(PHASE2)/%,$(PARSERS))
-	cd $(PHASE2) && \
-	$(NODE) ../../node_modules/requirejs/bin/r.js -o optimize=none baseUrl=. name=arr/compiler/web-compile.arr out=../web/web-compile.js paths.trove=trove paths.compiler=arr/compiler include=js/runtime-anf include=js/repl-lib
-
 $(PHASE1):
 	@$(call MKDIR,$(PHASE1_DIRS))
 
@@ -162,7 +131,6 @@ $(PHASE3):
 $(PHASE1)/pyret.js: $(PHASE1_ALL_DEPS) $(PHASE1)/pyret-start.js
 	cd $(PHASE1) && \
 		$(NODE) ../../node_modules/requirejs/bin/r.js -o ../../src/scripts/require-build.js baseUrl=. name=pyret-start out=pyret.js paths.trove=trove paths.compiler=arr/compiler include=js/runtime-anf include=js/repl-lib
-
 
 $(PHASE2)/pyret.js: $(PHASE2_ALL_DEPS) $(PHASE2)/pyret-start.js
 	cd $(PHASE2) && \
@@ -181,13 +149,13 @@ $(PHASE2)/pyret-start.js: src/scripts/pyret-start.js
 $(PHASE3)/pyret-start.js: src/scripts/pyret-start.js
 	cp $< $@
 
-$(PHASE1)/js/js-numbers.js: lib/js-numbers/src/js-numbers.js
+$(PHASE1)/js/js-numbers.js: src/js/base/js-numbers.js
 	cp $< $@
 
-$(PHASE2)/js/js-numbers.js: lib/js-numbers/src/js-numbers.js
+$(PHASE2)/js/js-numbers.js: src/js/base/js-numbers.js
 	cp $< $@
 
-$(PHASE3)/js/js-numbers.js: lib/js-numbers/src/js-numbers.js
+$(PHASE3)/js/js-numbers.js: src/js/base/js-numbers.js
 	cp $< $@
 
 $(PHASE1)/main-wrapper.js: src/scripts/main-wrapper.js
@@ -215,29 +183,8 @@ $(PHASE1)/$(JS)/%.js : src/$(JSBASE)/%.js
 	cp $< $@
 
 .PHONY : docs
-docs: $(DOCS_DEPS)
+docs:
 	cd docs/written && make VERSION=$(VERSION)
-
-$(DOCS_DEPS): | $(PHASE1)/phase1.built docs-trove
-
-docs-trove: $(DOCS)/doc-utils.arr.js
-	@$(call MKDIR,$(DOCS_DIRS))
-
-$(DOCS)/%.arr.js : $(DOCS)/%.arr $(PHASE1_ALL_DEPS)
-	$(NODE) $(PHASE1)/main-wrapper.js --compile-module-js $< > $@
-
-$(DOCS)/generated/trove/%.js.rkt : src/$(JSTROVE)/%.js docs/create-js-generated-docs.js
-	$(NODE) docs/create-js-generated-docs.js $(patsubst src/$(JSTROVE)/%,$(PHASE1)/trove/%,$<) > $@
-
-$(DOCS)/generated/js/%.js.rkt : src/$(JSBASE)/%.js docs/create-js-generated-docs.js
-	$(NODE) docs/create-js-generated-docs.js $(patsubst src/$(JSBASE)/%,$(PHASE1)/js/%,$<) > $@
-
-$(DOCS)/generated/trove/%.js.rkt : src/$(TROVE)/%.arr docs/create-arr-generated-docs.arr
-	$(NODE) $(PHASE1)/main-wrapper.js -no-check-mode docs/create-arr-generated-docs.arr $< $@
-$(DOCS)/generated/trove/%.js.rkt : src/$(BASE)/%.arr docs/create-arr-generated-docs.arr
-	$(NODE) $(PHASE1)/main-wrapper.js -no-check-mode docs/create-arr-generated-docs.arr $< $@
-$(DOCS)/generated/arr/compiler/%.arr.js.rkt : src/$(COMPILER)/%.arr docs/create-arr-generated-docs.arr
-	$(NODE) $(PHASE1)/main-wrapper.js -no-check-mode docs/create-arr-generated-docs.arr $< $@
 
 docs-skel: $(DOCS_SKEL_DEPS)
 $(DOCS_SKEL_DEPS): | $(PHASE1)/phase1.built docs-trove
@@ -247,7 +194,6 @@ $(DOCS)/written/trove/%.js.rkt : src/$(BASE)/%.arr docs/create-arr-doc-skeleton.
 	$(NODE) $(PHASE1)/main-wrapper.js -no-check-mode docs/create-arr-doc-skeleton.arr $< $@
 $(DOCS)/written/arr/compiler/%.arr.js.rkt : src/$(COMPILER)/%.arr docs/create-arr-doc-skeleton.arr
 	$(NODE) $(PHASE1)/main-wrapper.js -no-check-mode docs/create-arr-doc-skeleton.arr $< $@
-
 
 $(PHASE2)/$(JS)/%.js : src/$(JSBASE)/%.js
 	cp $< $@
@@ -295,74 +241,88 @@ $(PHASE3)/trove/%.js: src/$(TROVE)/%.arr $(PHASE2_ALL_DEPS)
 install:
 	@$(call MKDIR,node_modules)
 	npm install
-	git submodule init
-	git submodule update lib/CodeMirror
 
+PYRET_TEST_PHASE=$(P)
+ifeq ($(PYRET_TEST_PHASE),2)
+  PYRET_TEST_PHASE=$(PHASE2)
+  PYRET_TEST_PREREQ=$(PHASE2)/phase2.built
+else
+ifeq ($(PYRET_TEST_PHASE),3)
+  PYRET_TEST_PHASE=$(PHASE3)
+  PYRET_TEST_PREREQ=$(PHASE3)/phase3.built
+else
+  PYRET_TEST_PHASE=$(PHASE1)
+  PYRET_TEST_PREREQ=$(PHASE1)/phase1.built
+endif
+endif
 
 .PHONY : test
-test: runtime-test evaluator-test compiler-test repl-test pyret-test regression-test type-check-test
+test: runtime-test evaluator-test compiler-test repl-test pyret-test regression-test type-check-test lib-test
 
 .PHONY : test-all
-test-all: test bootstrap-test docs-test
+test-all: test docs-test benchmark-test
 
 .PHONY : runtime-test
-runtime-test : $(PHASE1)/phase1.built
-	cd tests/runtime/ && $(NODE) test.js require-test-runner/
+runtime-test : $(PYRET_TEST_PREREQ)
+	cd tests/runtime/ && PHASE=$(PYRET_TEST_PHASE) $(NODE) test.js require-test-runner/
 
 .PHONY : evaluator-test
-evaluator-test: $(PHASE1)/phase1.built
-	cd tests/evaluator/ && $(NODE) test.js require-test-runner/
+evaluator-test: $(PYRET_TEST_PREREQ)
+	cd tests/evaluator/ && PHASE=$(PYRET_TEST_PHASE) $(NODE) test.js require-test-runner/
 
 .PHONY : repl-test
-repl-test: $(PHASE1)/phase1.built tests/repl/repl.js
-	cd tests/repl/ && $(NODE) test.js require-test-runner/
+repl-test: $(PYRET_TEST_PREREQ) tests/repl/repl.js
+	cd tests/repl/ && PHASE=$(PYRET_TEST_PHASE) $(NODE) test.js require-test-runner/
 
 .PHONY : parse-test
 parse-test: tests/parse/parse.js build/phase1/js/pyret-tokenizer.js build/phase1/js/pyret-parser.js
 	cd tests/parse/ && $(NODE) test.js require-test-runner/
 
+TEST_HELP_JS := $(patsubst tests/pyret/%helper.arr,tests/pyret/%helper.arr.js,$(wildcard tests/pyret/*helper.arr))
 TEST_JS := $(patsubst tests/pyret/tests/%.arr,tests/pyret/tests/%.arr.js,$(wildcard tests/pyret/tests/*.arr))
 REGRESSION_TEST_JS := $(patsubst tests/pyret/regression/%.arr,tests/pyret/regression/%.arr.js,$(wildcard tests/pyret/regression/*.arr))
-BS_TEST_JS := $(patsubst tests/pyret/bootstrap-tests/%.arr,tests/pyret/bootstrap-tests/%.arr.js,$(wildcard tests/pyret/bootstrap-tests/*.arr))
 
-tests/pyret/tests/%.arr.js: tests/pyret/tests/%.arr $(PHASE1)/phase1.built
-	$(NODE) $(PHASE1)/main-wrapper.js --compile-module-js $< > $@
-tests/pyret/regression/%.arr.js: tests/pyret/regression/%.arr $(PHASE1)/phase1.built
-	$(NODE) $(PHASE1)/main-wrapper.js --compile-module-js $< > $@
-tests/pyret/bootstrap-tests/%.arr.js: tests/pyret/bootstrap-tests/%.arr $(PHASE1)/phase1.built
-	$(NODE) $(PHASE1)/main-wrapper.js --dialect Bootstrap --compile-module-js $< > $@
+tests/pyret/%helper.arr.js: tests/pyret/%helper.arr
+	$(NODE) $(PYRET_TEST_PHASE)/main-wrapper.js --compile-module-js $< > $@
+
+tests/pyret/tests/%.arr.js: tests/pyret/tests/%.arr $(PYRET_TEST_PREREQ)
+	$(NODE) $(PYRET_TEST_PHASE)/main-wrapper.js --compile-module-js $< > $@
+
+tests/pyret/regression/%.arr.js: tests/pyret/regression/%.arr $(PYRET_TEST_PREREQ)
+	$(NODE) $(PYRET_TEST_PHASE)/main-wrapper.js --compile-module-js $< > $@
 
 .PHONY : regression-test
-regression-test: $(PHASE1)/phase1.built $(REGRESSION_TEST_JS)
-	$(NODE) $(PHASE1)/main-wrapper.js \
+regression-test: $(PYRET_TEST_PREREQ) $(REGRESSION_TEST_JS) $(TEST_HELP_JS)
+	$(NODE) $(PYRET_TEST_PHASE)/main-wrapper.js \
     --module-load-dir tests/pyret \
     -check-all tests/pyret/regression.arr
 
 .PHONY : pyret-test
-pyret-test: $(PHASE1)/phase1.built $(TEST_JS)
-	$(NODE) $(PHASE1)/main-wrapper.js \
+pyret-test: $(PYRET_TEST_PREREQ) $(TEST_JS) $(TEST_HELP_JS)
+	$(NODE) $(PYRET_TEST_PHASE)/main-wrapper.js \
     --module-load-dir tests/pyret \
     -check-all tests/pyret/main.arr
 
 .PHONY : type-check-test
-type-check-test: $(PHASE1)/phase1.built
-	$(NODE) $(PHASE1)/main-wrapper.js \
+type-check-test: $(PYRET_TEST_PREREQ) $(TEST_HELP_JS)
+	$(NODE) $(PYRET_TEST_PHASE)/main-wrapper.js \
     --module-load-dir tests/type-check \
     -check-all tests/type-check/main.arr
 
-
 .PHONY : compiler-test
-compiler-test: $(PHASE1)/phase1.built
-	$(NODE) $(PHASE1)/main-wrapper.js \
-    --module-load-dir $(PHASE1)/arr/compiler/ \
+compiler-test: $(PYRET_TEST_PREREQ)
+	$(NODE) $(PYRET_TEST_PHASE)/main-wrapper.js \
+    --module-load-dir $(PYRET_TEST_PHASE)/arr/compiler/ \
     -check-all src/arr/compiler/compile.arr
 
-.PHONY : bootstrap-test
-bootstrap-test: $(PHASE1)/phase1.built $(BS_TEST_JS)
-	$(NODE) $(PHASE1)/main-wrapper.js \
-    --module-load-dir tests/pyret \
-    --dialect Bootstrap \
-    -check-all tests/pyret/bootstrap-main.arr
+.PHONY : lib-test
+lib-test: $(PYRET_TEST_PREREQ)
+	$(NODE) $(PYRET_TEST_PHASE)/main-wrapper.js \
+    -check-all tests/lib-test/lib-test-main.arr
+
+.PHONY : benchmark-test
+benchmark-test: tools/benchmark/*.js $(PYRET_TEST_PREREQ)
+	cd tools/benchmark && node tests
 
 .PHONY : docs-test
 docs-test: docs
@@ -375,31 +335,43 @@ clean:
 	$(call RMDIR,$(PHASE3))
 	$(call RMDIR,$(RELEASE_DIR))
 
-
 # Written this way because cmd.exe complains about && in command lines
 new-bootstrap: no-diff-standalone
 	sed "s/define('pyret-start/define('pyret/" $(PHASE2)/pyret.js > $(PHASE0)/pyret.js
 no-diff-standalone: standalone2 standalone3
 	diff $(PHASE2)/pyret.js $(PHASE3)/pyret.js
 
-
 $(RELEASE_DIR)/phase1:
 	$(call MKDIR,$(RELEASE_DIR)/phase1)
 
 ifdef VERSION
-release-gzip: $(PYRET_COMP) phase1 $(RELEASE_DIR)/phase1
-	gzip -c $(PYRET_COMP) > $(RELEASE_DIR)/pyret.js
+release-gzip: $(PYRET_COMP) phase1 standalone1 $(RELEASE_DIR)/phase1
+	gzip -c $(PHASE1)/pyret.js > $(RELEASE_DIR)/pyret.js
+	(cd $(PHASE1) && find * -type d -print0) | parallel --gnu -0 mkdir -p '$(RELEASE_DIR)/phase1/{}'
+	(cd $(PHASE1) && find * -type f -print0) | parallel --gnu -0 "gzip -c '$(PHASE1)/{}' > '$(RELEASE_DIR)/phase1/{}'"
+horizon-gzip: standalone1 $(RELEASE_DIR)/phase1
+	sed "s/define('pyret-start/define('pyret/" $(PHASE1)/pyret.js > $(RELEASE_DIR)/pyret-full.js
+	gzip -c $(RELEASE_DIR)/pyret-full.js > $(RELEASE_DIR)/pyret.js
 	(cd $(PHASE1) && find * -type d -print0) | parallel --gnu -0 mkdir -p '$(RELEASE_DIR)/phase1/{}'
 	(cd $(PHASE1) && find * -type f -print0) | parallel --gnu -0 "gzip -c '$(PHASE1)/{}' > '$(RELEASE_DIR)/phase1/{}'"
 # If you need information on using the s3 script, run `s3 --man'
+horizon-release: horizon-gzip
+	cd $(RELEASE_DIR) && \
+	find * -type f -print0 | parallel --gnu -0 $(S3) add --header 'Content-Type:text/javascript' --header 'Content-Encoding:gzip' --acl 'public-read' ':pyret-horizon/current/{}' '{}'
 release: release-gzip
 	cd $(RELEASE_DIR) && \
 	find * -type f -print0 | parallel --gnu -0 $(S3) add --header 'Content-Type:text/javascript' --header 'Content-Encoding:gzip' --acl 'public-read' ':pyret-releases/$(VERSION)/{}' '{}'
 test-release: release-gzip
 	cd $(RELEASE_DIR) && \
 	find * -type f -print0 | parallel --gnu -0 $(S3) add --header 'Content-Type:text/javascript' --header 'Content-Encoding:gzip' --acl 'public-read' ':pyret-releases/$(VERSION)-test/{}' '{}'
+horizon-docs: docs
+	scp -r build/docs/ $(DOCS_TARGET)/horizon-$(VERSION)/
+	chmod -R a+rx $(DOCS_TARGET)/horizon-$(VERSION)/
+	cd $(DOCS_TARGET) && unlink horizon && ln -s horizon-$(VERSION) horizon
 release-docs: docs
 	scp -r build/docs/ $(DOCS_TARGET)/$(VERSION)/
+	chmod -R a+rx $(DOCS_TARGET)/$(VERSION)/
+	cd $(DOCS_TARGET) && unlink latest && ln -s $(VERSION) latest
 else
 release-gzip:
 	$(error Cannot release from this platform)
@@ -408,4 +380,3 @@ release:
 test-release: release-gzip
 	$(error Cannot release from this platform)
 endif
-

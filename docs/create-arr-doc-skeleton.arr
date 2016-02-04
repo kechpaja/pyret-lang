@@ -45,7 +45,6 @@ options = {
 
 parsed-options = C.parse-cmdline(options)
 
-
 fun find-result(expr):
   cases(A.Expr) expr:
     | s-obj(_, _) => expr
@@ -53,7 +52,7 @@ fun find-result(expr):
     | s-let-expr(_, _, body) => find-result(body)
     | s-type-let-expr(_, _, body) => find-result(body)
     | s-letrec(_, _, body) => find-result(body)
-    | s-module(_, _, _, _, _) => expr
+    | s-module(_, _, _, _, _, _, _) => expr
     | else =>
       print("Got an expression we didn't expect:")
       print(torepr(expr))
@@ -87,7 +86,7 @@ fun lookup-value(value, bindings):
           | s-let(_, _, _, body) => help(seen, body)
           | s-dot(_, obj, field) =>
             help-obj = help(seen, obj)
-            cases(A.Expr) help-obj:
+            cases(Any) help-obj:
               | s-import(_, file, _) => crossref(file.tosource().pretty(1000).first, field)
               | s-obj(_, obj-fields) =>
                 cases(Option) obj-fields.find(lam(f): A.is-s-str(f.name) and (f.name.s == field) end):
@@ -135,7 +134,6 @@ no-atoms = A.default-map-visitor.{
   s-id-var(self, l, name): A.s-id(l, A.s-name(l, name.toname())) end
 }
 fun de-atomize(e): e.visit(no-atoms) end
-
 
 fun process-checks(_check):
   cases (Option) _check:
@@ -209,7 +207,7 @@ fun process-module(file, fields, types, bindings, type-bindings):
   # print("Data keys are " + torepr(fields.data-vals.keys()))
   # print("Fun keys are " + torepr(fields.fun-vals.keys()))
   fun process-item(name :: String, e):
-    cases(A.Expr) e: # Not guaranteed to be an Expr!
+    cases(Any) e: # Not guaranteed to be an Expr!
       | crossref(modname, as-name) =>
         at-exp("re-export",
           some([list: leaf(torepr(name)), spair("from", xref(modname, as-name))]),
@@ -319,7 +317,7 @@ cases (C.ParsedArguments) parsed-options:
       | empty => print("Require a file name")
       | link(file, more) =>
         file-contents = F.file-to-string(file)
-        parsed = P.parse-dialect(dialect, file-contents, file)
+        parsed = P.surface-parse(file-contents, file)
         scoped = R.desugar-scope(DC.desugar-no-checks(U.append-nothing-if-necessary(parsed).or-else(parsed)), CS.standard-builtins)
         named-and-bound = R.resolve-names(scoped, CS.minimal-builtins)
         named = named-and-bound.ast
@@ -328,7 +326,7 @@ cases (C.ParsedArguments) parsed-options:
         body = named.block
         result = find-result(body)
         cases(A.Expr) result:
-          | s-module(_, _, provides, provides-types, _) =>
+          | s-module(_, _, dv, dt, provides, provides-types, _) =>
             cases(A.Expr) provides:
               | s-obj(_, fields) =>
                 output = toplevel([list:

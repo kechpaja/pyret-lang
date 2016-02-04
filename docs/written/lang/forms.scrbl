@@ -21,7 +21,7 @@
 This section contains information on the various language forms in Pyret, from
 binary operators to data definitions to functions.  This is a more detailed
 reference to the grammar of expressions and statements and their evaluation,
-rather than to 
+rather than to
 
 @(table-of-contents)
 
@@ -45,12 +45,11 @@ Import statements come in a few forms:
 @justcode{
 import-stmt: IMPORT import-source AS NAME
 import-stmt: IMPORT NAME (COMMA NAME)* FROM import-source
-import-source: import-special | import-name | import-string 
+import-source: import-special | import-name | import-string
 import-special: NAME PARENNOSPACE STRING (COMMA STRING)* RPAREN
 import-name: NAME
 import-string: STRING
 }
-
 
 The form with @justcode{import-name} looks for a file with that name in the
 built-in libraries of Pyret, and it is an error if there is no such library.
@@ -64,8 +63,6 @@ Example:
     EQ.equal-always3(f, f) is EQ.Unknown
   end
 }
-
-
 
 @section{Provide Statements}
 
@@ -306,7 +303,7 @@ where:
 
   BTree(a-btree) is true
   BTree("not-a-tree") is false
-  BTree(leaf(5)) is false
+  BTree(leaf(5)) is true
   is-leaf(leaf(5)) is true
   is-leaf(a-btree) is false
   is-leaf("not-a-tree") is false
@@ -352,7 +349,25 @@ where:
 end
 }
 
+@subsection[#:tag "s:when-exp"]{When Expressions}
 
+A when expression has a single test condition with a corresponding
+block.
+
+@justcode{
+when-expr: "when" binop-expr COLON block "end"
+}
+
+For example:
+
+@pyret-block{
+when x == 42:
+  print("answer")
+end
+}
+
+If the test condition is true, the block is evaluated. If the
+test condition is false, nothing is done, and @pyret{nothing} is returned.
 
 @subsection[#:tag "s:var-expr"]{Variable Declarations}
 
@@ -416,7 +431,7 @@ doc-string: ["doc:" STRING]
 The @tt{ty-params} and @tt{where-clause} of lambda expressions are currently not
 interpreted by Pyret.  The @tt{ty-params} will be used when Pyret has more
 complete support for checking polymorphic functions.  The @tt{where-clause} is
-included for homogeneity with @seclink["s:fun-expr" "function statements"]. 
+included for homogeneity with @seclink["s:fun-expr" "function statements"].
 }
 
 A lambda expression creates a function value that can be applied with
@@ -436,7 +451,6 @@ end
 add1("not-a-number")
 # Error: expected a Number and got "not-a-number"
 }
-
 
 @subsection[#:tag "s:app-expr"]{Application Expressions}
 
@@ -543,6 +557,62 @@ lam(x, y, z): x + y + z end
 Pyret just does not provide syntactic sugar to help in this case
 (or other more complicated ones).
 
+@subsection[#:tag "s:cannonball-expr"]{Chaining Application}
+
+@justcode{
+CARET: "^"
+chain-app-expr: binop-expr CARET binop-expr
+}
+
+The expression @pyret{e1 ^ e2} is equivalent to @pyret{e2(e1)}.  It's just
+another way of writing a function application to a single argument.
+
+Sometimes, composing functions doesn't produce readable code.  For example, if
+say we have a @pyret{Tree} datatype, and we have an @pyret{add} operation on
+it, defined via a function.  To build up a tree with a series of adds, we'd
+write something like:
+
+@pyret-block{
+t = add(add(add(add(empty-tree, 1), 2), 3), 4)
+}
+
+Or maybe
+
+@pyret-block{
+t1 = add(empty-tree, 1)
+t2 = add(t1, 2)
+t3 = add(t2, 3)
+t  = add(t3, 4)
+}
+
+If @pyret{add} were a method, we could write:
+
+@pyret-block{
+t = empty-tree.add(1).add(2).add(3).add(4)
+}
+
+which would be more readable, but since @pyret{add} is a function, this doesn't
+work.
+
+In this case, we can write instead:
+
+@pyret-block{
+t = empty-tree ^ add(_, 1) ^ add(_, 2) ^ add(_, 3)
+}
+
+This uses @seclink["s:curried-apply-expr" "curried application"] to create a
+single argument function, and chaining application to apply it.  This can be
+more readable across several lines of initialization as well, when compared to
+composing “inside-out” or using several intermediate names:
+
+@pyret-block{
+t = empty-tree
+  ^ add(_, 1)
+  ^ add(_, 2)
+  ^ add(_, 3)
+  # and so on
+}
+
 @subsection[#:tag "s:binop-expr"]{Binary Operators}
 
 There are a number of binary operators in Pyret.  A binary operator expression
@@ -586,7 +656,6 @@ field: key ":" binop-expr
      | key args return-ann ":" doc-string block where-clause "end"
 key: NAME
 }
-
 
 A comma-separated sequence of fields enclosed in @tt{{}} creates an object; we
 refer to the expression as an @emph{object literal}.  There are two types of
@@ -632,10 +701,10 @@ of five things:
   not a method}
 
   @item{
-  
+
     If the @tt{NAME} field is a method value, evaluates to a function that is
-    the @emph{method binding} of the method value to @tt{val}.  For a method 
-    
+    the @emph{method binding} of the method value to @tt{val}.  For a method
+
     @justcode{
       m = method(self, x): body end
     }
@@ -656,7 +725,7 @@ of five things:
       o = { m(self, x): self.y + x end, y: 22 }
       check:
         the-m-method-closed-over-o = o.m
-        m(5) is 27
+        the-m-method-closed-over-o(5) is 27
       end
     }
   }
@@ -687,6 +756,78 @@ check:
 end
 }
 
+@subsection[#:tag "s:if-expr"]{If Expressions}
+
+An if expression has a number of test conditions and an optional else case.
+
+@justcode{
+if-expr: IF binop-expr COLON block else-if* [ELSECOLON block] end
+else-if: ELSEIF binop-expr COLON block
+}
+
+For example, this if expression has an "else:"
+
+@pyret-block{
+if x == 0:
+  1
+else if x > 0:
+  x
+else:
+  x * -1
+end
+}
+
+This one does not:
+
+@pyret-block{
+if x == 0:
+  1
+else if x > 0:
+  x
+end
+}
+
+Both are valid.  The conditions are tried in order, and the block corresponding
+to the first one to return @pyret{true} is evaluated.  If no condition matches,
+the else branch is evaluated if present.  If no condition matches and no else
+branch is present, an error is thrown.  If a condition evaluates to a value
+other than @pyret{true} or @pyret{false}, a runtime error is thrown.
+
+@subsection[#:tag "s:ask-expr"]{Ask Expressions}
+
+An @pyret{ask} expression is a different way of writing an @pyret{if}
+expression that can be easier to read in some cases.
+
+@justcode{
+ask-expr: ASKCOLON ask-branch* [BAR OTHERWISECOLON block] end
+ask-branch: BAR binop-expr THENCOLON block
+}
+
+This ask expression:
+
+@pyret-block{
+ask:
+  | x == 0 then: 1
+  | x > 0 then: x
+  | otherwise: x * -1
+end
+}
+
+is equivalent to
+
+@pyret-block{
+if x == 0:
+  1
+else if x > 0:
+  x
+else:
+  x * -1
+end
+}
+
+Similar to @pyret{if}, if an @pyret{otherwise:} branch isn't specified and no
+branch matches, a runtime error results.
+
 @subsection[#:tag "s:cases-expr"]{Cases Expressions}
 
 A cases expression consists of a datatype (in parentheses), an expression to
@@ -694,47 +835,44 @@ inspect (before the colon), and a number of branches.  It is intended to be
 used in a structure parallel to a data definition.
 
 @justcode{
-cases-expr: "cases" (PARENSPACE|PARENNOSPACE) expr-check ")" expr-target ":"
+cases-expr: "cases" (PARENSPACE|PARENNOSPACE) check-ann ")" expr-target ":"
     cases-branch*
     ["|" "else" "=>" block]
   "end"
 cases-branch: "|" NAME [args] "=>" block
 }
 
-A @tt{cases} expression first evaluates @tt{expr-check} to get a checker for
-the type of the value to branch on.  Typically, this should be the name of a
-datatype like @tt{list.List}.  The expression then evaluates @tt{expr-target},
-and checks if it matches the given annotation.  If it does not, an exception is
-raise, otherwise it proceeds to match it against the given cases.
+The @pyret{check-ann} must be a type, like @pyret-id["List" "lists"].  Then
+@pyret{expr-target} is evaluated and checked against the given annotation.  If
+it has the right type, the cases are then checked.
 
 Cases should use the names of the variants of the given data type as the
-@tt{NAME}s of each branch.  The branches will be tried, in order, checking if
-the given value is an instance of that variant.  If it matches, the fields of
-the variant are bound, in order, to the provided @tt{args}, and the right-hand
-side of the @tt{=>} is evaluated in that extended environment.  An exception
-results if the wrong number of arguments are given.
+@tt{NAME}s of each branch.  In the branch that matches, the fields of the
+variant are bound, in order, to the provided @tt{args}, and the right-hand side
+of the @tt{=>} is evaluated in that extended environment.  An exception results
+if the wrong number of arguments are given.
 
 An optional @tt{else} clause can be provided, which is evaluated if no cases
 match.  If no @tt{else} clause is provided, a default is used that raises an
 exception.
 
-For example, a cases expression on lists looks like:
+For example, some cases expression on lists looks like:
 
 @justcode{
 check:
-  result = cases(list.List) [list: 1,2,3]:
+  result = cases(List) [list: 1,2,3]:
     | empty => "empty"
     | link(f, r) => "link"
   end
   result is "link"
 
-  result2 = cases(list.List) [list: 1,2,3]:
+  result2 = cases(List) [list: 1,2,3]:
     | empty => "empty"
     | else => "else"
   end
   result2 is else
 
-  result3 = cases(list.List) empty:
+  result3 = cases(List) empty:
     | empty => "empty"
     | else => "else"
   end
@@ -816,7 +954,7 @@ x :: Number = "not-a-number"
 # Error: expected Number and got "not-a-number"
 }
 
-@tt{Any} is an annotation that allows any value to be used.  It semantically
+@tt{Any} is an annotation that allows any value to be used.  It's semantically
 equivalent to not putting an annotation on an identifier, but it allows a
 program to clearly signal that no restrictions are intended for the identifier
 it annotates.
@@ -834,4 +972,3 @@ arrow-ann-elt: ann ","
 
 When an arrow annotation appears in a binding, that binding position simply
 checks that the value is a function.
-
