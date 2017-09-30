@@ -7,9 +7,9 @@ provide {
   Bool: read-bool,
   String: read-string,
   Custom: read-custom,
-  ParseParam: ParseParam,
-  ParamRepeat: ParamRepeat,
-  Param: Param,
+  ParseParam: is-ParseParam,
+  ParamRepeat: is-ParamRepeat,
+  Param: is-Param,
   parse-args: parse-args,
   parse-cmdline: parse-cmdline,
   usage-info: usage-info,
@@ -24,21 +24,42 @@ provide {
   right: right,
   required-once: required-once,
   required-many: required-many,
-  ParsedArguments: ParsedArguments,
+  ParsedArguments: is-ParsedArguments,
   is-success: is-success,
   is-arg-error: is-arg-error
 } end
 provide-types *
 
+import global as _
+import base as _
 import cmdline-lib as CL
 import format as F
 import string-dict as D
+import lists as lists
 import either as E
+import option as O
+import valueskeleton as VS
+
+type Option = O.Option
+some = O.some
+none = O.none
+
+type Either = E.Either
+right = E.right
+left = E.left
+
+type List = lists.List
+link = lists.link
+empty = lists.empty
+list = lists.list
+is-empty = lists.is-empty
+fold = lists.fold
+
+
+
+
 format = F.format
 string-dict = D.string-dict
-type Either = E.Either
-left = E.left
-right = E.right
 
 all-cmdline-params = CL.command-line-arguments()
 file-name = all-cmdline-params.first
@@ -46,33 +67,33 @@ other-args = all-cmdline-params.rest
 
 data ParseParam:
   | read-number with:
-    parse(_, arg-index :: Number, param-name :: String, s :: String) -> Either<Number, String>:
+    method parse(_, arg-index :: Number, param-name :: String, s :: String) -> Either<Number, String>:
       n = string-tonumber(s)
       if is-nothing(n):
         right(format("~a expected a numeric argument, got ~a", [list: param-name, torepr(s)]))
       else: left(n)
       end
     end,
-    parse-string(self): "<number>" end
+    method parse-string(self): "<number>" end
   | read-bool with:
-    parse(_, arg-index :: Number, param-name :: String, s :: String) -> Either<Boolean, String>:
+    method parse(_, arg-index :: Number, param-name :: String, s :: String) -> Either<Boolean, String>:
       if s == "true": left(true)
       else if s == "false": left(false)
       else:
         right(format("~a expected a boolean argument, got ~a", [list: param-name, torepr(s)]))
       end
     end,
-    parse-string(self): "(true|false)" end
+    method parse-string(self): "(true|false)" end
   | read-string with:
-    parse(_, arg-index :: Number, param-name :: String, s :: String) -> Either<String, String>:
+    method parse(_, arg-index :: Number, param-name :: String, s :: String) -> Either<String, String>:
       left(s)
     end,
-    parse-string(self): "<string>" end
+    method parse-string(self): "<string>" end
   | read-custom(name :: String, parser :: Function) with:
-    parse(self, arg-index :: Number, param-name :: String, s :: String):
+    method parse(self, arg-index :: Number, param-name :: String, s :: String):
       self.parser(arg-index, param-name, s)
     end,
-    parse-string(self): format("<~a>", [list: self.name]) end
+    method parse-string(self): format("<~a>", [list: self.name]) end
 end
 
 data ParsedArguments:
@@ -82,10 +103,10 @@ end
 
 
 data ParamRepeat:
-  | once with: _tostring(_, ts): "may be used at most once" end
-  | many with: _tostring(_, ts): "may be repeated" end
-  | required-once with: _tostring(_, ts): "must be used exactly once" end
-  | required-many with: _tostring(_, ts): "must be used at least once" end
+  | once with: method _output(_): VS.vs-value("may be used at most once") end
+  | many with: method _output(_): VS.vs-value("may be repeated") end
+  | required-once with: method _output(_): VS.vs-value("must be used exactly once") end
+  | required-many with: method _output(_): VS.vs-value("must be used at least once") end
 end
 
 data Param:
@@ -104,10 +125,9 @@ fun is-Param_(l):
 end
 
 # options : Dictionary of Params
-fun usage-info(options-raw) -> List<String>:
-  options = options-raw
+fun usage-info(options) -> List<String>:
   option-info = 
-    for lists.map(key from options.keys().to-list()):
+    for D.map-keys(key from options):
       cases(Param) options.get-value(key):
         | flag(repeated, desc) =>
           format("  -~a: ~a (~a)", [list: key, desc, repeated])
@@ -144,7 +164,7 @@ fun parse-args(options, args :: List<String>) -> ParsedArguments:
   arguments do not satisfy the requirements of the Params dictionary.```
   opts-dict = options
   options-and-aliases =
-    for lists.fold(acc from {options: opts-dict, aliases: D.make-string-dict()}, key from opts-dict.keys().to-list()):
+    for D.fold-keys(acc from {options: opts-dict, aliases: D.make-string-dict()}, key from opts-dict):
       if is-arg-error(acc): acc
       else:
         cur-option = opts-dict.get-value(key)
@@ -343,7 +363,7 @@ fun parse-args(options, args :: List<String>) -> ParsedArguments:
     parsed-results = process(success(D.make-string-dict(), [list: ]), 1, args)
     cases(ParsedArguments) parsed-results:
       | success(parsed, other) =>
-        filled-missing-defaults = for lists.fold(acc from parsed, key from opts-dict.keys-list()):
+        filled-missing-defaults = for D.fold-keys(acc from parsed, key from opts-dict):
           cases(Param) opts-dict.get-value(key):
             | next-val-default(_, default, _, repeated, _) =>
               if not(acc.has-key(key)) and ((repeated == once) or (repeated == many)): acc.set(key, default)

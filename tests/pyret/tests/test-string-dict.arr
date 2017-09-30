@@ -37,7 +37,7 @@ check "basics":
 
   var long-torepr = nothing
   long-torepr := {
-    _output(self):
+    method _output(self) block:
       var str = ""
       for each(i from range(0, 10000)):
         str := tostring(i)
@@ -64,7 +64,7 @@ check "basics":
     is-not [SD.mutable-string-dict: "b", 5, "c", 5]
   sd-many-as = [SD.mutable-string-dict:]
   sd-almost-many-as = [SD.mutable-string-dict: "a", 10]
-  for each(i from range(0, 100)):
+  for each(i from range(0, 100)) block:
     sd-many-as.set-now("a" + tostring(i), i)
     when not(i == 54):
       sd-almost-many-as.set-now("a" + tostring(i), i)
@@ -148,6 +148,15 @@ check "Immutable string dicts":
   sd9.get-value-now("b") is 20
 end
 
+check "remove and unfreeze":
+  d0 = [SD.string-dict: "A", 1, "B", 2, "C", 3]
+  d1 = d0.remove("A")
+  d2 = d1.unfreeze()
+  first-key = d2.keys-list-now().first
+  first-val = d2.get-now(first-key)
+  first-val is-not none
+end
+
 check "cyclic":
   s1 = [SD.mutable-string-dict: "a", nothing]
   s1.set-now("a", s1)
@@ -185,4 +194,73 @@ end
 
 check "sdo":
   SD.string-dict-of([list: "x", "y", "z"], 5) is [SD.string-dict: "x", 5, "y", 5, "z", 5]
+end
+
+check "predicates":
+  SD.is-mutable-string-dict(sd1) is true
+  SD.is-string-dict(sd1) is false
+  SD.is-mutable-string-dict(isd2) is false
+  SD.is-string-dict(isd2) is true
+  SD.is-mutable-string-dict(1) is false
+  SD.is-string-dict(1) is false
+end
+
+check "merge-now":
+  s1 = [SD.mutable-string-dict: "a", 5, "c", 4]
+  s2 = [SD.mutable-string-dict: "a", 10, "b", 6]
+
+  isd9 = s1.freeze()
+  isd10 = s2.freeze()
+
+  s1.merge-now(s2) is nothing
+  s1 is=~ [SD.mutable-string-dict: "a", 10, "b", 6, "c", 4]
+
+  orig-s1 = isd9.unfreeze()
+  s2.merge-now(orig-s1) is nothing
+  s2 is=~ [SD.mutable-string-dict: "a", 5, "b", 6, "c", 4]
+
+  isd9.keys-list()  is%(one-of) [list: [list: "a", "c"], [list: "c", "a"]]
+  isd10.keys-list() is%(one-of) [list: [list: "a", "b"], [list: "b", "a"]]
+
+  orig-s2 = isd10.unfreeze()
+  new-s1 = orig-s1
+  new-s1.merge-now(orig-s2) is nothing
+  new-s1 is=~ [SD.mutable-string-dict: "a", 10, "b", 6, "c", 4]
+
+  s4 = [SD.mutable-string-dict: "a", 5]
+  s5 = [SD.mutable-string-dict:]
+  s4.merge-now(s5) is nothing
+  s4 is=~ [SD.mutable-string-dict: "a", 5]
+  s5.merge-now(s4) is nothing
+  s5 is=~ [SD.mutable-string-dict: "a", 5]
+end
+
+check "ISD Annotation Errors":
+  isd = [SD.string-dict: "a", 1]
+
+  isd.get(0)         raises "String"
+  isd.get-value(0)   raises "String"
+  isd.set(true, 2)   raises "String"
+  isd.has-key(true)  raises "String"
+  isd.merge(true)    raises "StringDict"
+  isd.remove(true)   raises "String"
+  isd.each-key(true) raises "Function"
+  isd.map-keys(true) raises "Function"
+  isd.fold-keys(1,1) raises "Function"
+
+  SD.string-dict-of(1, 1) raises "List"
+end
+
+check "MSD Annotation Errors":
+  msd = [SD.mutable-string-dict: "a", 1]
+
+  msd.get-now(0)         raises "String"
+  msd.get-value-now(0)   raises "String"
+  msd.set-now(true, 2)   raises "String"
+  msd.has-key-now(true)  raises "String"
+  msd.merge-now(true)    raises "MutableStringDict"
+  msd.remove-now(true)   raises "String"
+  msd.each-key-now(true) raises "Function"
+  msd.map-keys-now(true) raises "Function"
+  msd.fold-keys-now(1,1) raises "Function"
 end

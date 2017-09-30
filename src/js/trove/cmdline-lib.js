@@ -1,16 +1,19 @@
-define(["js/runtime-util", "js/ffi-helpers"], function(util, ffi) {
+({
+  requires: [],
+  provides: {},
+  nativeRequires: [],
+  theModule: function(runtime, _, uri) {
+    return runtime.makeModuleReturn(
+      {
+          "command-line-arguments": runtime.makeFunction(function() {
+              var args = runtime.getParam("command-line-arguments");
+              if (args.length == 0) {
+                  args = ["<browser>"];
+              }
 
-  return util.memoModule("cmdline-lib", function(RUNTIME, NAMESPACE) {
-    return RUNTIME.loadJSModules(NAMESPACE, [ffi], function(F) {
-      return RUNTIME.makeObject({
-        provide: RUNTIME.makeObject({
-          "command-line-arguments": RUNTIME.makeFunction(function() {
-            return F.makeList(RUNTIME.getParam("command-line-arguments").map(RUNTIME.makeString));
-          }),
-        }),
-        answer: NAMESPACE.get("nothing")
-      });
-    });
-  });
-});
-
+              return runtime.ffi.makeList(args.map(runtime.makeString));
+          }, "command-line-arguments"),
+      },
+      {});
+  }
+})

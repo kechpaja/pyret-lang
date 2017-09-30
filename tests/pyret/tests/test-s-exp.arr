@@ -50,7 +50,7 @@ check:
 
   p("-5") is s-num(-5)
   p("-4.4") is s-num(-4.4)
-  p("-3.") is s-num(-3.0)
+  p("-3.0") is s-num(-3.0)
   # Make sure bignums parse correctly
   p(num-tostring(num-expt(100, 100))) is
     s-num(num-expt(100, 100))
@@ -105,7 +105,7 @@ fun parse(prog) -> Expr:
   
   fun check-params(maybe-params :: S.S-Exp) -> List<String>:
     doc: "Ensure that a function has no duplicate parameter names."
-    cases(S.S-Exp) maybe-params:
+    cases(S.S-Exp) maybe-params block:
       | s-list(params) =>
         for each(param from params):
           when params.filter(lam(x): x == param end).length() > 1:
